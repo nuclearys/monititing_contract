@@ -26,6 +26,7 @@ Document upload -> document_processing_jobs -> document worker -> DeepSeek
   договоров, обязательств, задач, комментариев и дашборда;
 - `src/modules/audit/audit-service.ts` — защищённый журнал действий для
   администратора;
+- `src/http/api-controller.ts` — API-контроллеры и валидация входных данных;
 - `src/http/http-utils.ts` — общие HTTP, JSON и multipart-утилиты.
 
 Для production задайте `AUTH_MODE=oidc`, `REDIS_URL` и
