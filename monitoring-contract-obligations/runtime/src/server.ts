@@ -31,10 +31,8 @@ function userIdFromRequest(request: IncomingMessage): string | null {
   const cookie = request.headers.cookie?.match(/(?:^|;\s*)monitoring_session=([^;]+)/)?.[1];
   if (cookie) return sessions.get(cookie)?.userId ?? null;
   const devUserId = request.headers['x-dev-user-id'];
-  if (process.env.NODE_ENV !== 'production' && typeof devUserId === 'string')
-    return devUserId;
-  const userId = request.headers['x-user-id'];
-  return typeof userId === 'string' ? userId : null;
+  if (process.env.NODE_ENV !== 'production' && typeof devUserId === 'string') return devUserId;
+  return null;
 }
 
 function redirect(response: ServerResponse, location: string, cookies: string[] = []): void {

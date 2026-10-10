@@ -12,7 +12,8 @@
     "obligations:mark-overdue": "node --env-file-if-exists=.env --import tsx scripts/mark-overdue.ts",
     "start": "node --env-file-if-exists=.env --import tsx src/server.ts",
     "dev": "node --env-file-if-exists=.env --import tsx src/server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:smoke": "node --import tsx --test tests/*.test.mjs"
   },
   "dependencies": {
     "node-pg-migrate": "9.0.0",

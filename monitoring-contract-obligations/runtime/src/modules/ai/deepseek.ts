@@ -65,6 +65,10 @@ function normalizeObligations(value: unknown): ExtractedObligation[] {
   });
 }
 
+export function parseDeepSeekContent(content: string): ExtractedObligation[] {
+  return normalizeObligations(parseJsonContent(content));
+}
+
 export function createDeepSeekExtractor(config: DeepSeekConfig = {}) {
   const apiKey = config.apiKey ?? process.env.DEEPSEEK_API_KEY;
   const baseUrl = (config.baseUrl ?? process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com').replace(/\/$/, '');
