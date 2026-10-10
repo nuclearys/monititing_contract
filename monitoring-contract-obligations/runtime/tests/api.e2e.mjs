@@ -69,13 +69,18 @@ test('document upload, lawyer verification and curator response work end to end'
     assert.equal(card.body.contract_id, createdContractId);
     assert.ok(Array.isArray(card.body.documents));
 
+    const curator = await login('demo.curator', 'deal_curator');
+    const curatorMe = await jsonResponse('/api/me', { headers: { cookie: curator.cookie } });
+
     const lawyer = await login(`e2e-lawyer-${Date.now()}`, 'lawyer');
     const me = await jsonResponse('/api/me', { headers: { cookie: lawyer.cookie } });
     verificationLawyerId = me.body.id;
     const groups = await jsonResponse('/api/review-task-groups?status=open', { headers: { cookie: lawyer.cookie } });
     assert.equal(groups.response.status, 200);
     assert.ok(groups.body.length > 0);
-    const group = await jsonResponse(`/api/review-task-groups/${groups.body[0].contract_id}`, { headers: { cookie: lawyer.cookie } });
+    const targetContractId = groups.body[0].contract_id;
+    await pool.query('UPDATE contracts SET curator_user_id = $1 WHERE id = $2', [curatorMe.body.id, targetContractId]);
+    const group = await jsonResponse(`/api/review-task-groups/${targetContractId}`, { headers: { cookie: lawyer.cookie } });
     const pending = group.body.find((item) => item.verification_status === 'pending');
     assert.ok(pending, 'an open verification obligation is required for the e2e scenario');
     verificationObligationId = pending.obligation_id;
@@ -100,7 +105,6 @@ test('document upload, lawyer verification and curator response work end to end'
     const taskEvent = await pool.query('SELECT comment_event_id FROM review_tasks WHERE id = $1', [commentTaskId]);
     commentEventId = taskEvent.rows[0]?.comment_event_id ?? null;
 
-    const curator = await login('demo.curator', 'deal_curator');
     const tasks = await jsonResponse('/api/review-tasks?status=open&task_type=comment_response', { headers: { cookie: curator.cookie } });
     const task = tasks.body.find((item) => item.id === commentTaskId);
     assert.ok(task, 'the curator should receive the comment response task');

@@ -7,9 +7,9 @@ import { MemorySessionStore } from '../src/infrastructure/session-store.ts';
 
 test('memory session store expires sessions', async () => {
   const store = new MemorySessionStore();
-  await store.set('session', { userId: 'user-1' }, 0.001);
+  await store.set('session', { userId: 'user-1' }, 0.1);
   assert.deepEqual(await store.get('session'), { userId: 'user-1' });
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(await store.get('session'), null);
   await store.close();
 });
