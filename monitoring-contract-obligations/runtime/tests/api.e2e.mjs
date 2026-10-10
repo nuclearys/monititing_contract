@@ -109,6 +109,13 @@ test('document upload, lawyer verification and curator response work end to end'
     const tasks = await jsonResponse('/api/review-tasks?status=open&task_type=comment_response', { headers: { cookie: curator.cookie } });
     const task = tasks.body.find((item) => item.id === commentTaskId);
     assert.ok(task, 'the curator should receive the comment response task');
+    const started = await jsonResponse(`/api/review-tasks/${commentTaskId}`, {
+      method: 'PATCH',
+      headers: { cookie: curator.cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'in_progress' }),
+    });
+    assert.equal(started.response.status, 200);
+    assert.equal(started.body.status, 'in_progress');
     const completed = await jsonResponse(`/api/review-tasks/${commentTaskId}`, {
       method: 'PATCH',
       headers: { cookie: curator.cookie, 'content-type': 'application/json' },
