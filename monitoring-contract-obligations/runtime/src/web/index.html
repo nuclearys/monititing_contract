@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Реестр обязательств</title>
+    <style>
+      :root { color-scheme: light; font-family: Inter, Arial, ui-sans-serif, system-ui, -apple-system, sans-serif; --brand-blue:#0077C8; --brand-deep:#004C97; --brand-gray:#626262; --brand-light:#C8C8C8; --surface:#F4F4F4; --ink:#222b35; }
+      * { box-sizing: border-box; }
+      [hidden] { display:none !important; }
+      html { overflow-x:hidden; }
+      body { min-width:320px; margin: 0; color:var(--ink); background:var(--surface); }
+      header { display:flex; align-items:center; justify-content:space-between; gap:24px; min-height:76px; padding:16px clamp(20px,4vw,56px) 15px; background:var(--brand-deep); border-bottom:4px solid var(--brand-blue); color:#fff; }
+      header strong { max-width:430px; font-size:15px; line-height:1.25; letter-spacing:.01em; }
+      header span { color:#d8e8f5; font-size:13px; }
+      .top-actions { display:flex; align-items:center; gap:16px; }
+      .user-menu { position:relative; }
+      .user-menu-button { display:flex; align-items:center; gap:10px; min-height:42px; padding:5px 10px 5px 6px; border:1px solid #6aa8d1; border-radius:9px; background:#003b78; color:#fff; text-align:left; }
+      .user-menu-button:hover { background:#003365; }
+      .user-avatar { display:grid; place-items:center; width:30px; height:30px; border-radius:50%; background:#e5f3fb; color:var(--brand-deep); font-size:12px; font-weight:800; }
+      .user-menu-copy { display:flex; flex-direction:column; gap:2px; min-width:120px; }
+      .user-menu-copy strong { color:#fff; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .user-menu-copy small { color:#d1e3f1; font-size:11px; }
+      .user-menu-chevron { color:#d1e3f1; font-size:14px; }
+      .user-menu-panel { position:absolute; top:calc(100% + 8px); right:0; z-index:4; width:310px; padding:14px; border:1px solid #dfe5ed; border-radius:10px; background:#fff; box-shadow:0 14px 32px rgba(16,35,63,.2); color:#172033; }
+      .user-menu-panel[hidden] { display:none; }
+      .user-details { padding-bottom:12px; border-bottom:1px solid #e8edf3; }
+      .user-details strong { display:block; margin-bottom:4px; color:#172033; font-size:14px; }
+      .user-details span { display:block; margin-top:5px; color:#66738a; font-size:12px; line-height:1.35; }
+      .user-menu-panel a { display:block; margin-top:12px; color:#b42318; font-size:13px; font-weight:700; text-decoration:none; }
+      .user-menu-panel a:hover { text-decoration:underline; }
+      main { max-width:1360px; margin:0 auto; padding:34px clamp(20px,4vw,56px) 56px; }
+      .heading { display:flex; justify-content:space-between; align-items:end; gap:24px; margin-bottom:26px; }
+      h1 { margin:0 0 8px; font-size:32px; line-height:1.08; letter-spacing:-.04em; }
+      h2 { margin:0 0 6px; font-size:20px; letter-spacing:-.02em; }
+      .muted { color:var(--brand-gray); font-size:14px; }
+      .panel { background:#fff; border:1px solid #d9e1e8; border-radius:14px; box-shadow:0 10px 28px rgba(0,76,151,.07); }
+      .dashboard { padding:24px 24px 22px; margin-bottom:20px; }
+      .dashboard-head { display:block; margin-bottom:22px; }
+      .dashboard-head h2 { font-size:21px; }
+      .role-nav { display:flex; flex-wrap:wrap; gap:4px; justify-content:flex-start; margin-top:20px; padding-bottom:0; border-bottom:1px solid #dfe7ed; }
+      .role-nav button { min-height:38px; margin-bottom:-1px; padding:8px 13px; border:0; border-bottom:3px solid transparent; border-radius:0; background:transparent; color:#687789; font-size:12px; font-weight:750; }
+      .role-nav button:hover { background:#f4f8fb; color:var(--brand-deep); }
+      .role-nav button.primary, .role-nav button.active { background:#f4f9fc; color:var(--brand-deep); border-bottom-color:var(--brand-blue); }
+      .metric-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:14px; }
+      .metric { border:1px solid #d8e1e8; border-left:4px solid #b5d6e9; border-radius:10px; padding:16px; background:#fbfcfd; }
+      .metric .value { display:block; margin-bottom:4px; font-size:24px; font-weight:750; color:#172033; }
+      .metric .label { display:block; color:var(--brand-gray); font-size:12px; font-weight:600; }
+      .metric .context { display:block; margin-top:5px; color:#718094; font-size:11px; line-height:1.25; }
+      .metric.alert .value { color:#b42318; }
+      .workspace { padding:24px; margin-bottom:20px; }
+      .workspace-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
+      .workspace-head h3 { margin:0 0 5px; font-size:19px; }
+      .workspace-grid { display:grid; grid-template-columns:minmax(0, 1.15fr) minmax(280px, .85fr); gap:16px; }
+      .work-card { min-height:138px; padding:18px; border:1px solid #d8e1e8; border-radius:11px; background:#fbfcfd; }
+      .work-card.task-card { grid-column:1/-1; }
+      .work-card h4 { margin:0 0 8px; font-size:14px; color:#253449; }
+      .work-card p { margin:0; color:#66738a; font-size:13px; line-height:1.55; }
+      .work-card form { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:13px 14px; margin-top:16px; }
+      .work-card form > label:has(textarea) { grid-column:1/-1; }
+      .work-card input, .work-card select { min-height:38px; font-size:13px; }
+      .work-card textarea { width:100%; min-height:84px; padding:10px 11px; border:1px solid #cdd6e2; border-radius:8px; resize:vertical; font:inherit; font-size:13px; }
+      .work-card button { min-height:38px; font-size:13px; }
+      .work-card .hint { grid-column:1/-1; margin-top:-4px; color:#66738a; font-size:12px; }
+      .filters { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)) auto; align-items:end; gap:14px; padding:18px; margin-bottom:20px; }
+      label { display:flex; flex-direction:column; gap:7px; color:#5f6f80; font-size:12px; font-weight:700; }
+      input, select, button { min-height:42px; max-width:100%; border:1px solid #bfcbd5; border-radius:8px; padding:0 12px; background:#fff; color:var(--ink); font:inherit; }
+      input:focus, select:focus, textarea:focus { outline:3px solid rgba(0,119,200,.16); border-color:var(--brand-blue); }
+      button { cursor:pointer; background:var(--brand-blue); border-color:var(--brand-blue); color:#fff; font-weight:600; align-self:end; }
+      button:hover { background:var(--brand-deep); border-color:var(--brand-deep); }
+      button.secondary { background:#fff; color:var(--brand-deep); border-color:#9fc5df; }
+      .status-line { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 16px; padding:0 4px 14px; font-size:13px; }
+      .table-wrap { position:relative; overflow-x:auto; overflow-y:hidden; border-radius:14px; -webkit-overflow-scrolling:touch; }
+      table { width:100%; min-width:1100px; border-collapse:collapse; }
+      th, td { padding:15px 16px; border-bottom:1px solid #e8edf3; text-align:left; vertical-align:top; }
+      th { color:var(--brand-deep); background:#eef5f9; font-size:12px; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
+      td { font-size:14px; }
+      tbody tr:hover { background:#f8fbff; }
+      .obligation-row td { transition:background .15s ease, box-shadow .15s ease; }
+      .obligation-row.is-overdue td { background:#fff2f0; }
+      .obligation-row.is-overdue td:first-child { box-shadow:inset 4px 0 0 #d92d20; }
+      .obligation-row.is-pending:not(.is-overdue) td { background:#fff9e8; }
+      .obligation-row.is-pending:not(.is-overdue) td:first-child { box-shadow:inset 4px 0 0 #d99a00; }
+      .obligation-row.is-corrected:not(.is-overdue) td { background:#fff5e8; }
+      .obligation-row.is-corrected:not(.is-overdue) td:first-child { box-shadow:inset 4px 0 0 #e07b00; }
+      .obligation-row.is-completed td { background:#f1faf5; }
+      .obligation-row.is-completed td:first-child { box-shadow:inset 4px 0 0 #2f9e68; }
+      .obligation-row.is-overdue:hover td { background:#ffe5e1; }
+      .obligation-row.is-pending:not(.is-overdue):hover td { background:#fff1c9; }
+      .obligation-row.is-corrected:not(.is-overdue):hover td { background:#ffe9c9; }
+      .obligation-row.is-completed:hover td { background:#def3e7; }
+      .registry-legend { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:0 4px 14px; color:#66738a; font-size:12px; }
+      .legend-item { display:inline-flex; align-items:center; gap:6px; }
+      .legend-swatch { width:10px; height:10px; border-radius:3px; border-left:3px solid transparent; }
+      .legend-swatch.overdue { background:#fff2f0; border-left-color:#d92d20; }
+      .legend-swatch.pending { background:#fff9e8; border-left-color:#d99a00; }
+      .legend-swatch.corrected { background:#fff5e8; border-left-color:#e07b00; }
+      .legend-swatch.completed { background:#f1faf5; border-left-color:#2f9e68; }
+      .contract-link { color:var(--brand-deep); font-weight:700; cursor:pointer; text-decoration:none; }
+      .subject { max-width:280px; line-height:1.4; }
+      .badge { display:inline-flex; padding:5px 8px; border-radius:999px; font-size:12px; font-weight:700; white-space:nowrap; background:#edf2f7; color:#56657a; }
+      .badge.red { background:#fee4e2; color:#b42318; }
+      .badge.green { background:#e6f6ed; color:#18794e; }
+      .badge.blue { background:#e5f3fb; color:var(--brand-deep); }
+      .empty { padding:56px 24px; text-align:center; color:#66738a; }
+      .empty strong { display:block; color:#172033; font-size:16px; margin-bottom:8px; }
+      .drawer { position:fixed; inset:0 0 0 auto; width:min(1020px, 100%); transform:translateX(100%); transition:transform .2s ease; background:#fff; box-shadow:-12px 0 40px rgba(0,76,151,.18); z-index:2; padding:32px clamp(20px,3vw,42px); overflow:auto; }
+      .drawer.open { transform:translateX(0); }
+      .drawer-head { display:flex; justify-content:space-between; gap:16px; align-items:start; margin-bottom:24px; }
+      .drawer h2 { margin:0 0 8px; font-size:22px; }
+      .close { border:0; background:transparent; color:#66738a; font-size:24px; padding:0 4px; min-height:auto; }
+      .card-row { display:grid; grid-template-columns:140px 1fr; gap:16px; padding:12px 0; border-bottom:1px solid #e8edf3; font-size:14px; }
+      .card-row dt { color:#66738a; }
+      .card-row dd { margin:0; word-break:break-word; }
+      .document-workspace { margin-top:24px; padding-top:20px; border-top:1px solid #e8edf3; }
+      .document-list { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 16px; }
+      .document-list button { min-height:34px; font-size:12px; background:#f3f6fa; color:#1c5d99; border-color:#d7e1ec; }
+      .document-list button.active { background:#e5f0fb; border-color:#8fb8dd; }
+      .document-view-grid { display:grid; grid-template-columns:minmax(0, 1.25fr) minmax(280px, .75fr); gap:16px; }
+      .document-text, .remarks-panel { min-height:260px; padding:16px; border:1px solid #dfe5ed; border-radius:10px; background:#fbfcfe; }
+      .document-text h4, .remarks-panel h4 { margin:0 0 10px; font-size:14px; }
+      .document-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:-2px 0 12px; padding-bottom:10px; border-bottom:1px solid #e4ebf1; }
+      .document-toolbar .selection-hint { color:#718094; font-size:12px; line-height:1.35; }
+      .document-toolbar .highlight-hint { color:#8a6500; font-size:12px; line-height:1.35; }
+      .document-toolbar button { min-height:34px; padding:0 10px; font-size:12px; white-space:nowrap; }
+      .document-toolbar button:disabled { cursor:not-allowed; background:#dce6ed; border-color:#dce6ed; color:#778695; }
+      .document-text pre { margin:0; max-height:430px; overflow:auto; white-space:pre-wrap; font:13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color:#28364a; }
+      .obligation-highlight { padding:2px 3px; border-radius:3px; background:#ffe28a; color:#28364a; box-shadow:0 0 0 1px #e7bd42; }
+      .obligation-picker { width:100%; margin-bottom:12px; }
+      .selected-quote { margin:0 0 12px; padding:10px 12px; border-left:3px solid var(--brand-blue); background:#edf6fb; color:#3e5367; font-size:12px; line-height:1.5; }
+      .selected-quote strong { display:block; margin-bottom:3px; color:var(--brand-deep); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+      .remarks-list { max-height:190px; overflow:auto; margin-bottom:12px; }
+      .remark { padding:9px 0; border-bottom:1px solid #e8edf3; font-size:12px; line-height:1.45; }
+      .remark small { display:block; margin-top:4px; color:#66738a; }
+      .remarks-panel textarea { width:100%; min-height:76px; padding:9px 10px; border:1px solid #cdd6e2; border-radius:8px; resize:vertical; font:13px/1.4 inherit; }
+      .task-board { display:grid; gap:12px; }
+      .task-toolbar { display:flex; align-items:end; justify-content:space-between; gap:12px; margin-bottom:14px; }
+      .task-toolbar label { min-width:190px; }
+      .task-toolbar button { min-height:38px; font-size:13px; }
+      .review-task { padding:15px; border:1px solid #d8e1e8; border-left:4px solid var(--brand-blue); border-radius:10px; background:#fff; }
+      .review-task.is-completed, .review-task.is-declined { border-left-color:#9eabb8; opacity:.82; }
+      .review-task.expandable { padding:0; overflow:hidden; }
+      .review-task-summary { display:flex; align-items:start; justify-content:space-between; gap:12px; padding:15px; cursor:pointer; list-style:none; }
+      .review-task-summary::-webkit-details-marker { display:none; }
+      .review-task-summary::after { content:'+'; flex:0 0 24px; width:24px; height:24px; border:1px solid #c9dce8; border-radius:50%; color:var(--brand-deep); font-size:18px; line-height:21px; text-align:center; }
+      .review-task.expandable[open] .review-task-summary::after { content:'−'; }
+      .review-task-summary:hover { background:#f7fbfd; }
+      .review-task-body { padding:0 15px 15px; border-top:1px solid #e8edf3; }
+      .review-task-head { display:flex; align-items:start; justify-content:space-between; gap:12px; }
+      .review-task-title { margin:0 0 4px; color:#253449; font-size:14px; font-weight:750; }
+      .review-task-meta { color:#718094; font-size:12px; line-height:1.45; }
+      .review-task-comment { margin:12px 0 0; color:#3f5062; font-size:13px; line-height:1.5; white-space:pre-wrap; }
+      .review-task-quote { margin:10px 0 0; padding:9px 11px; border-left:3px solid #b5d6e9; background:#f5f9fb; color:#5c6d7e; font-size:12px; line-height:1.5; white-space:pre-wrap; }
+      .review-task-response { width:100%; min-height:62px; margin-top:12px; padding:9px 10px; border:1px solid #cdd6e2; border-radius:8px; resize:vertical; font:13px/1.4 inherit; }
+      .review-task-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+      .review-task-actions button { min-height:34px; padding:0 10px; font-size:12px; }
+      .task-empty { padding:28px 18px; border:1px dashed #cbd7e0; border-radius:10px; color:#718094; text-align:center; }
+      .pagination { display:flex; align-items:center; justify-content:center; gap:12px; padding:14px 0 2px; }
+      .pagination button { min-width:40px; min-height:34px; padding:0 10px; font-size:13px; }
+      .pagination button:disabled { cursor:not-allowed; opacity:.45; }
+      .pagination-info { min-width:70px; color:#66738a; font-size:13px; text-align:center; }
+      .task-registry-table-wrap { overflow:auto; border:1px solid #d8e1e8; border-radius:10px; background:#fff; }
+      .task-registry-table { width:100%; min-width:720px; border-collapse:collapse; font-size:13px; }
+      .task-registry-table th { padding:11px 12px; text-align:left; color:#718094; font-size:11px; font-weight:750; text-transform:uppercase; letter-spacing:.04em; background:#f7fafc; border-bottom:1px solid #d8e1e8; }
+      .task-registry-table td { padding:13px 12px; vertical-align:top; border-bottom:1px solid #e8edf3; color:#3f5062; }
+      .task-registry-table tr:last-child td { border-bottom:0; }
+      .task-registry-table tr:hover td { background:#f7fbfd; }
+      .task-open-link { padding:0; border:0; background:transparent; color:var(--brand-deep); font:inherit; font-weight:750; text-align:left; cursor:pointer; }
+      .task-open-link:hover { color:var(--brand-blue); text-decoration:underline; }
+      .task-detail { margin-top:16px; padding:18px; border:1px solid #c9dce8; border-radius:11px; background:#f9fcfe; }
+      .task-detail-head { display:flex; align-items:start; justify-content:space-between; gap:12px; margin-bottom:16px; }
+      .task-detail-head-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
+      .task-detail h4 { margin:0 0 5px; color:#253449; font-size:16px; }
+      .task-detail-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+      .obligation-check { padding:14px; margin-top:10px; border:1px solid #d8e1e8; border-radius:9px; background:#fff; }
+      .obligation-check.is-overdue { border-color:#efb4ae; background:#fff7f5; box-shadow:inset 4px 0 0 #d92d20; }
+      .obligation-check.is-pending:not(.is-overdue) { border-color:#eed58b; background:#fffdf4; box-shadow:inset 4px 0 0 #d99a00; }
+      .obligation-check.is-corrected:not(.is-overdue) { border-color:#f0c58c; background:#fffaf3; box-shadow:inset 4px 0 0 #e07b00; }
+      .obligation-check.is-completed { border-color:#b8dfc8; background:#f7fcf9; box-shadow:inset 4px 0 0 #2f9e68; }
+      .obligation-check summary { list-style:none; cursor:pointer; }
+      .obligation-check summary::-webkit-details-marker { display:none; }
+      .obligation-check summary::after { content:'+'; float:right; width:24px; height:24px; border:1px solid #c9dce8; border-radius:50%; color:var(--brand-deep); font-size:18px; line-height:21px; text-align:center; }
+      .obligation-check[open] summary::after { content:'−'; }
+      .obligation-check-head { display:flex; align-items:start; justify-content:space-between; gap:12px; }
+      .obligation-check-title { margin:0; color:#253449; font-size:14px; }
+      .obligation-check textarea { width:100%; min-height:58px; margin-top:10px; padding:9px 10px; border:1px solid #cdd6e2; border-radius:8px; resize:vertical; font:13px/1.4 inherit; }
+      .obligation-check .hint { margin-top:7px; }
+      @media (max-width:760px) { .document-view-grid { grid-template-columns:1fr; } }
+      @media (max-width:980px) { .workspace-grid { grid-template-columns:1fr; } .filters { grid-template-columns:repeat(2, minmax(0, 1fr)); } .filters button { min-width:150px; } .heading { align-items:start; } .metric-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
+      @media (max-width:760px) { header { align-items:flex-start; flex-direction:column; } header strong { max-width:520px; } .top-actions { width:100%; justify-content:space-between; } .user-menu-panel { left:0; right:auto; } main { padding-top:26px; } .heading { display:block; } .heading > .muted { margin-top:10px; } h1 { font-size:28px; } .dashboard, .workspace { padding:18px; } .workspace-head { display:block; } .workspace-head .badge { margin-top:12px; } .drawer { width:100%; padding:24px 18px; } .drawer-head { margin-bottom:18px; } .card-row { grid-template-columns:1fr; gap:5px; padding:11px 0; } .document-view-grid { grid-template-columns:1fr; } .document-text, .remarks-panel { min-height:0; } .document-text pre { max-height:340px; } .task-toolbar { align-items:stretch; flex-direction:column; } .task-toolbar label { min-width:0; } .review-task-head { flex-direction:column; } }
+      @media (max-width:620px) { header, main { padding-left:16px; padding-right:16px; } .filters { grid-template-columns:1fr; padding:16px; } .filters button { width:100%; } .metric-grid { grid-template-columns:1fr 1fr; gap:10px; } .metric { padding:13px; } .role-nav { overflow-x:auto; flex-wrap:nowrap; margin-right:-18px; padding-right:18px; } .role-nav button { flex:0 0 auto; } .work-card form { grid-template-columns:1fr; } .work-card form > label:has(textarea), .work-card .hint { grid-column:auto; } .document-list { overflow-x:auto; flex-wrap:nowrap; padding-bottom:4px; } .document-list button { flex:0 0 auto; } }
+      @media (max-width:420px) { .top-actions { align-items:flex-start; } .user-menu-copy { min-width:0; max-width:150px; } .user-menu-button { max-width:100%; } .dashboard, .workspace { border-radius:11px; } .metric .value { font-size:21px; } .status-line { padding-left:0; padding-right:0; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Мониторинг исполнения договорных обязательств</strong>
+      <div class="top-actions"><div class="user-menu"><button type="button" class="user-menu-button" id="userMenuButton" aria-expanded="false" aria-controls="userMenuPanel"><span class="user-avatar" id="userAvatar">—</span><span class="user-menu-copy"><strong id="userName">Загрузка…</strong><small id="userRole">Пользователь</small></span><span class="user-menu-chevron">⌄</span></button><div class="user-menu-panel" id="userMenuPanel" hidden><div class="user-details"><strong id="userDetailsName">Пользователь</strong><span id="userDetailsPosition">Должность: —</span><span id="userDetailsDepartment">Подразделение: —</span><span id="userDetailsEmail">Корпоративная почта: —</span><span id="userDetailsRole">Роль в системе: не определена</span></div><a href="/logout">Выйти из системы</a></div></div><span id="identity" hidden>Локальный режим</span><select id="role" hidden><option value="lawyer">Юрист</option><option value="deal_curator">Куратор сделки</option><option value="fco">ФЦО</option><option value="contract_manager">Контрактный менеджер</option><option value="observer">Наблюдатель</option><option value="administrator">Администратор</option></select></div>
+    </header>
+    <main>
+      <div class="heading" id="pageHeading">
+        <div>
+          <h1>Реестр обязательств</h1>
+          <div class="muted">Единый список обязательств в пределах области видимости пользователя</div>
+        </div>
+        <div class="muted">Шаг 1 · просмотр данных</div>
+      </div>
+
+      <section class="panel dashboard" id="dashboard">
+        <div class="dashboard-head"><div><h2 id="dashboardTitle">Кабинет юриста</h2><div class="muted" id="dashboardHint">Рабочий набор задач и обязательств правовой службы</div></div><nav class="role-nav" id="roleNav"></nav></div>
+        <div class="metric-grid" id="metrics"></div>
+      </section>
+
+      <section class="panel workspace" id="workspace"></section>
+
+      <form class="panel filters" id="filters">
+        <input id="userId" type="hidden" autocomplete="off" />
+        <label>Статус исполнения
+          <select id="execution_status"><option value="">Все</option><option value="not_started">Не начато</option><option value="in_progress">В работе</option><option value="completed">Исполнено</option><option value="overdue">Просрочено</option></select>
+        </label>
+        <label>Тип
+          <select id="obligation_type"><option value="">Все</option><option value="financial">Финансовое</option><option value="non_financial">Нефинансовое</option></select>
+        </label>
+        <label>Просрочка
+          <select id="overdue"><option value="">Все</option><option value="true">Только просроченные</option><option value="false">Без просрочки</option></select>
+        </label>
+        <label>Размер страницы
+          <select id="page_size"><option selected>10</option><option>20</option><option>50</option></select>
+        </label>
+        <button type="submit">Обновить</button>
+      </form>
+
+      <div class="status-line" id="registryStatus"><span id="resultInfo">Введите UUID пользователя для просмотра данных</span><span id="error" class="badge red" hidden></span></div>
+      <div class="registry-legend" id="registryLegend" aria-label="Легенда подсветки обязательств"><span class="legend-item"><i class="legend-swatch overdue"></i>Просрочено</span><span class="legend-item"><i class="legend-swatch pending"></i>Требует проверки</span><span class="legend-item"><i class="legend-swatch corrected"></i>Нужно исправить</span><span class="legend-item"><i class="legend-swatch completed"></i>Исполнено</span></div>
+      <section class="panel table-wrap" id="registry">
+        <table>
+          <thead><tr><th>Договор</th><th>Обязательство</th><th>Сторона</th><th>Срок</th><th>Тип</th><th>Исполнение</th><th>Риск</th><th>Уверенность</th></tr></thead>
+          <tbody id="rows"><tr><td colspan="8" class="empty"><strong>Реестр пока не загружен</strong>Укажите идентификатор пользователя и нажмите «Обновить».</td></tr></tbody>
+        </table>
+        <div class="pagination" id="registryPagination" hidden><button type="button" class="secondary" id="previousPage" aria-label="Предыдущая страница">‹</button><span class="pagination-info" id="paginationInfo">1 / 1</span><button type="button" class="secondary" id="nextPage" aria-label="Следующая страница">›</button></div>
+      </section>
+    </main>
+
+    <aside class="drawer" id="drawer" aria-hidden="true">
+      <div class="drawer-head"><div><h2 id="drawerTitle">Карточка договора</h2><div class="muted" id="drawerSubtitle"></div></div><button class="close" id="closeDrawer" aria-label="Закрыть">×</button></div>
+      <dl id="drawerBody"></dl>
+      <section class="document-workspace" id="documentWorkspace" hidden>
+        <h3>Просмотр документа и замечания</h3>
+        <div class="muted">Выберите документ и обязательство. Замечание сохранится в истории проверки.</div>
+        <div class="document-list" id="documentList"></div>
+        <div class="document-view-grid">
+          <article class="document-text"><h4 id="documentTitle">Текст документа</h4><div class="document-toolbar"><span class="selection-hint" id="selectionHint">Выделите фрагмент текста, чтобы оставить комментарий</span><span class="highlight-hint" id="obligationHighlightHint"></span><button type="button" id="addSelectionComment" disabled>Оставить комментарий</button></div><pre id="documentText">Выберите документ для просмотра.</pre></article>
+          <article class="remarks-panel"><h4>Замечания и задачи</h4><select class="obligation-picker" id="obligationPicker"><option value="">Выберите обязательство</option></select><blockquote class="selected-quote" id="selectedQuote" hidden><strong>Выделенный фрагмент</strong><span id="selectedQuoteText"></span></blockquote><div class="remarks-list" id="remarksList">Выберите обязательство.</div><form id="remarkForm"><textarea id="remarkText" required placeholder="Опишите замечание для куратора"></textarea><button type="submit">Сохранить и направить куратору</button><div class="hint" id="remarkMessage"></div></form></article>
+        </div>
+      </section>
+    </aside>
+
+    <script>
+      const userInput = document.getElementById('userId');
+      const roleSelect = document.getElementById('role');
+      const workspace = document.getElementById('workspace');
+      let currentRoles = [];
+      let registryPage = 1;
+      const roleLabels = { lawyer:'Юрист', deal_curator:'Куратор сделки', fco:'ФЦО', contract_manager:'Контрактный менеджер', observer:'Наблюдатель', administrator:'Администратор' };
+      const roleProfiles = {
+        lawyer: { position:'Юрист', department:'Правовой департамент' },
+        deal_curator: { position:'Куратор сделки', department:'Дирекция по управлению договорами' },
+        fco: { position:'Специалист ФЦО', department:'Функциональный центр ответственности' },
+        contract_manager: { position:'Контрактный менеджер', department:'Дирекция по управлению договорами' },
+        observer: { position:'Наблюдатель', department:'Корпоративный контроль' },
+        administrator: { position:'Администратор системы', department:'Служба сопровождения ИС' }
+      };
+      const savedUser = localStorage.getItem('monitoring-dev-user-id') || new URLSearchParams(location.search).get('devUser') || '';
+      userInput.value = savedUser;
+      const roleConfig = {
+        lawyer: { title:'Кабинет юриста', hint:'Рабочий набор задач и обязательств правовой службы', nav:['Реестр обязательств','Реестр задач','Расхождения','Красные светофоры','ПИР'], metrics:[['contracts','Договоры'],['totalObligations','Обязательства сделки'],['pendingVerification','Требуют проверки'],['overdue','Просрочены','alert'],['noExecution','Без исполнения','alert'],['redFlags','Красные светофоры','alert']] },
+        deal_curator: { title:'Кабинет куратора сделки', hint:'Исполнение обязательств по своим договорам', nav:['Реестр обязательств','Реестр задач','Ближайшие сроки','Просрочки','Подтверждения','Договоры без исполнения'], metrics:[['contracts','Договоры'],['totalObligations','Обязательства сделки'],['dueSoon','Ближайшие сроки'],['overdue','Просрочены','alert'],['noExecution','Без исполнения','alert']] },
+        fco: { title:'Кабинет ФЦО', hint:'Ответы на запросы по обязательствам функционального центра', nav:['Реестр обязательств','Запросы на подтверждение','История ответов','Нарушения'], metrics:[['contracts','Договоры'],['totalObligations','Обязательства сделки'],['fcoPending','Ожидают ответа','alert'],['fcoAccepted','Подтверждены'],['fcoRejected','Отклонены']] },
+        contract_manager: { title:'Кабинет контрактного менеджера', hint:'Договоры и обязательства своего контура', nav:['Реестр обязательств','Мои договоры','Загрузка документов','Расхождения','Аналитика'], metrics:[['contracts','Договоры'],['totalObligations','Обязательства сделки'],['contractsOnReview','На проверке'],['failedProcessing','Ошибки обработки','alert']] },
+        observer: { title:'Кабинет наблюдателя', hint:'Просмотр реестра и аналитических срезов без изменения данных', nav:['Реестр обязательств','Договоры','Аналитика'], metrics:[['contracts','Договоры'],['totalObligations','Обязательства сделки'],['overdue','Просрочены','alert'],['redFlags','Красные светофоры']] },
+        administrator: { title:'Кабинет администратора', hint:'Управление доступом, справочниками, уведомлениями и аудитом', nav:['Реестр обязательств','Пользователи и права','Справочники','Уведомления','Аудит'], metrics:[['users','Пользователи'],['contracts','Договоры'],['auditEvents','События аудита'],['failedProcessing','Ошибки обработки','alert']] }
+      };
+      const sectionContent = {
+        'Реестр обязательств': ['Реестр обязательств','Общий рабочий реестр доступных пользователю обязательств. Фильтры и данные подключены к API.'],
+        'Задачи по комментариям': ['Задачи по комментариям','Комментарии по тексту договора, которые требуют просмотра и реакции куратора.'],
+        'Реестр задач': ['Реестр задач','Задачи юриста по проверке обязательств: срок, договор, фрагмент текста и результат проверки.'],
+        'Проверка обязательств': ['Проверка обязательств','Полный список обязательств, ожидающих проверки. Детальная работа выполняется из карточки задачи.'],
+        'Комментарии куратору': ['Комментарии куратору','История замечаний юриста по договорам, переданных кураторам на просмотр и реакцию.'],
+        'Расхождения': ['Расхождения','Список расхождений между матрицей обязательств и текстом договора.'],
+        'Красные светофоры': ['Красные светофоры','Позиции высокого риска и результаты классификации ложных срабатываний.'],
+        'ПИР': ['Нарушения, переданные в ПИР','Ручная фиксация нарушений, переданных в претензионно-исковую работу.'],
+        'Ближайшие сроки': ['Ближайшие сроки','Обязательства по своим договорам, требующие внимания в ближайший период.'],
+        'Просрочки': ['Просрочки','Просроченные обязательства с комментарием и причиной куратора.'],
+        'Подтверждения': ['Подтверждения исполнения','Фиксация статуса исполнения, даты и подтверждающего документа.'],
+        'Договоры без исполнения': ['Договоры без исполнения','Отчёт по договорам без исполнения более года.'],
+        'Запросы на подтверждение': ['Запросы на подтверждение','Перечень обязательств, направленных в ФЦО для подтверждения.'],
+        'История ответов': ['История ответов','Архив ответов ФЦО с выбранными причинами и комментариями.'],
+        'Нарушения': ['Нарушения','Подтверждённые и опровергнутые нарушения по позициям выгрузки.'],
+        'Мои договоры': ['Мои договоры','Договоры доступного контрактному менеджеру контура.'],
+        'Загрузка документов': ['Загрузка документов','Пакетная загрузка договоров и приложений с контролем готовности к анализу.'],
+        'Аналитика': ['Аналитика','Срезы по статусам, рискам, срокам, контурам и качеству обработки.'],
+        'Договоры': ['Договоры','Просмотр карточек договоров в пределах области видимости.'],
+        'Пользователи и права': ['Пользователи и права','Назначение ролей и областей видимости пользователей.'],
+        'Справочники': ['Справочники','Настройка типов обязательств, причин, статусов и контуров.'],
+        'Уведомления': ['Уведомления','Правила системных уведомлений и контроль доставки событий.'],
+        'Аудит': ['Аудит','Журнал действий пользователей и вызовов языковой модели.']
+      };
+      const sectionFilters = {
+        'Проверка обязательств': { verification_status:'pending' },
+        'Красные светофоры': { risk:'high' },
+        'Ближайшие сроки': { due_to: () => { const date = new Date(); date.setDate(date.getDate() + 14); return date.toISOString().slice(0, 10); } },
+        'Просрочки': { overdue:'true' },
+        'Договоры без исполнения': { execution_status:'not_started' },
+        'Запросы на подтверждение': { overdue:'false' }
+      };
+      function executionFormHtml() { return '<form id="executionForm"><label>Обязательство<select id="executionObligation" required><option value="">Загрузка…</option></select></label><label>Статус исполнения<select id="executionStatus" required><option value="not_started">Не начато</option><option value="in_progress">В работе</option><option value="completed">Исполнено</option><option value="overdue">Просрочено</option><option value="not_applicable">Не применимо</option></select></label><label>Дата фактического исполнения<input id="actualExecutionDate" type="date"></label><label>Комментарий куратора<textarea id="executionComment" required placeholder="Что сделано или почему обязательство не исполнено"></textarea></label><label>Причина просрочки<textarea id="overdueReason" placeholder="Заполняется для статуса «Просрочено»"></textarea></label><label>Комментарий по просрочке<textarea id="overdueComment" placeholder="Обязательное пояснение куратора при просрочке"></textarea></label><label>Документ-подтверждение<input id="evidenceDocumentId" placeholder="UUID загруженного документа"></label><button type="submit">Сохранить исполнение</button><span id="executionMessage" class="hint"></span></form>'; }
+      function uploadFormHtml() { return '<form id="uploadForm"><label>Номер договора<input id="uploadContractNumber" required placeholder="Например, ДОГ-2026/001"></label><label>Наименование договора<input id="uploadTitle" required placeholder="Краткое наименование"></label><label>Контрагент<input id="uploadCounterparty" required placeholder="Наименование организации"></label><label>Дата договора<input id="uploadContractDate" type="date"></label><label>Тип документа<select id="uploadDocumentKind"><option value="contract">Договор</option><option value="annex">Приложение</option><option value="amendment">Дополнительное соглашение</option><option value="evidence">Подтверждающий документ</option><option value="other">Другое</option></select></label><label>Файл договора или приложения<input id="uploadFile" type="file" required accept=".pdf,.doc,.docx"></label><button type="submit">Загрузить и поставить в обработку</button><span id="uploadMessage" class="hint"></span></form>'; }
+      function taskRegistryHtml() { return '<div class="task-registry" id="taskRegistry"><div class="task-toolbar"><label>Статус задачи<select id="taskGroupStatus"><option value="open">Открытые</option><option value="in_progress">В работе</option><option value="needs_revision">Есть замечания</option><option value="completed">Завершённые</option><option value="">Все</option></select></label><label>Срок<select id="taskGroupDue"><option value="">Все сроки</option><option value="today">Сегодня и просроченные</option><option value="upcoming">Ближайшие 14 дней</option><option value="no_due">Без срока</option></select></label><button type="button" class="secondary" id="refreshTaskGroups">Обновить задачи</button></div><div id="taskGroupsList"><div class="task-empty">Загрузка реестра задач…</div></div><section class="task-detail" id="taskGroupDetail" hidden></section></div>'; }
+      function taskGroupStatusLabel(value) { return ({open:'Открыта',in_progress:'В работе',needs_revision:'Есть замечания',completed:'Завершена'}[value] || value || '—'); }
+      function verificationStatusLabel(value, executionStatus) { if (value === 'confirmed' && executionStatus === 'not_applicable') return 'Валидно · исполнения не требует'; return ({pending:'Требует проверки',confirmed:'Валидно',corrected:'Нужно исправить',rejected:'Отклонено'}[value] || value || '—'); }
+      function taskRegistryTableHtml(items) { if (!items.length) return '<div class="task-empty">Задач с выбранными фильтрами нет.</div>'; return `<div class="task-registry-table-wrap"><table class="task-registry-table"><thead><tr><th>Задача</th><th>Срок</th><th>Обязательства</th><th>Прогресс</th><th>Статус</th></tr></thead><tbody>${items.map((item) => { const due = item.due_date ? new Date(`${item.due_date}T00:00:00`) : null; const dueLabel = !due ? 'Не указан' : due < new Date(new Date().setHours(0,0,0,0)) ? `Просрочено · ${due.toLocaleDateString('ru-RU')}` : due.toDateString() === new Date().toDateString() ? 'Сегодня' : due.toLocaleDateString('ru-RU'); const statusClass = item.task_status === 'needs_revision' ? 'red' : item.task_status === 'completed' ? 'green' : 'blue'; return `<tr><td><button type="button" class="task-open-link" data-task-group="${esc(item.contract_id)}">${esc(item.contract_number)}</button><div class="muted">${esc(item.contract_title)}</div></td><td>${esc(dueLabel)}</td><td>${esc(item.obligation_count)} всего</td><td>${esc(item.confirmed_count + item.corrected_count)} из ${esc(item.obligation_count)}</td><td>${badge(taskGroupStatusLabel(item.task_status), statusClass)}</td></tr>`; }).join('')}</tbody></table></div>`; }
+      function taskGroupDetailHtml(items) { if (!items.length) return '<div class="task-empty">Обязательства для задачи не найдены.</div>'; const first = items[0]; const pending = items.filter((item) => item.verification_status === 'pending').length; const completed = items.length - pending; return `<div class="task-detail-head"><div><h4>${esc(first.contract_number)} · ${esc(first.contract_title)}</h4><div class="muted">Проверка обязательств: ${completed} из ${items.length}. Статус задачи изменится после обработки всех позиций.</div></div><div class="task-detail-head-actions"><button type="button" class="secondary" id="collapseTaskDetail">Свернуть детализацию</button></div></div><div class="task-detail-actions"><button type="button" class="secondary" data-task-contract="${esc(first.contract_id)}">Открыть карточку договора</button></div>${items.map((item) => { const checked = item.verification_status !== 'pending'; const comment = item.verification_comment ? `<div class="review-task-comment"><strong>Комментарий юриста:</strong> ${esc(item.verification_comment)}</div>` : ''; const actions = checked ? `<div class="hint">${esc(verificationStatusLabel(item.verification_status, item.execution_status))}</div>${comment}` : `<textarea id="verification-comment-${esc(item.obligation_id)}" placeholder="Комментарий нужен, если требуется исправление"></textarea><div class="review-task-actions"><button type="button" data-verification-status="confirmed" data-obligation-id="${esc(item.obligation_id)}">Валидно, исполнения не требует</button><button type="button" class="secondary" data-verification-status="corrected" data-obligation-id="${esc(item.obligation_id)}">Нужно исправить</button></div>`; return `<details class="obligation-check ${obligationStateClass(item)}"><summary><div class="obligation-check-head"><div><h5 class="obligation-check-title">${esc(item.code)} · ${esc(item.obligation_title)}</h5><div class="review-task-meta">Срок: ${esc(item.due_date || 'не указан')}</div></div><span class="badge ${checked ? 'green' : 'blue'}">${esc(verificationStatusLabel(item.verification_status, item.execution_status))}</span></div></summary>${item.source_fragment ? `<blockquote class="review-task-quote">${esc(item.source_fragment)}</blockquote>` : ''}${actions}</details>`; }).join('')}`; }
+      function reviewTasksHtml(readOnly = false, taskType = 'comment_response', dueFilter = false, expandable = false) { const dueControl = dueFilter ? '<label>Срок<select id="reviewTaskDue"><option value="">Все активные</option><option value="today">Сегодня и просроченные</option><option value="upcoming">Ближайшие 14 дней</option><option value="no_due">Без срока</option></select></label>' : ''; return `<div class="task-board" data-readonly="${readOnly}" data-task-type="${taskType}" data-due-filter="${dueFilter}" data-expandable="${expandable}"><div class="task-toolbar"><label>Статус задачи<select id="reviewTaskStatus"><option value="open">Открытые</option><option value="in_progress">В работе</option><option value="completed">Завершённые</option><option value="declined">Отклонённые</option><option value="">Все</option></select></label>${dueControl}<button type="button" class="secondary" id="refreshReviewTasks">Обновить задачи</button></div><div id="reviewTasksList" class="task-list"><div class="task-empty">Загрузка задач…</div></div></div>`; }
+      function sectionHtml(section) { const curatorTaskRegistry = roleSelect.value === 'deal_curator' && section === 'Реестр задач'; const content = curatorTaskRegistry ? ['Реестр задач','Комментарии и запросы, требующие ответа куратора.'] : sectionContent[section] || [section,'Рабочий раздел будет подключён к API на следующем этапе.']; const readOnlyTasks = section === 'Комментарии куратору'; const taskRegistry = section === 'Реестр задач' && !curatorTaskRegistry; const commentTasks = curatorTaskRegistry || section === 'Задачи по комментариям' || readOnlyTasks; const taskSection = taskRegistry || commentTasks; const actions = section === 'Загрузка документов' ? uploadFormHtml() : section === 'Подтверждения' ? executionFormHtml() : taskRegistry ? taskRegistryHtml() : commentTasks ? reviewTasksHtml(readOnlyTasks, 'comment_response', curatorTaskRegistry, curatorTaskRegistry) : ''; const filter = sectionFilters[section]; const link = filter ? '<button type="button" class="secondary" data-open-registry>Открыть реестр</button><div class="hint">Переход откроет реестр с применённым фильтром.</div>' : ''; const taskTitle = taskRegistry || curatorTaskRegistry ? 'Реестр задач' : readOnlyTasks ? 'Отправленные комментарии' : 'Очередь куратора'; const taskDescription = taskRegistry ? 'Одна строка — одна задача по договору. Откройте задачу, чтобы проверить обязательства и зафиксировать результат юриста.' : curatorTaskRegistry ? 'Здесь отображаются только обязательства, по которым куратору нужно ответить или внести корректировку.' : readOnlyTasks ? 'Здесь отображаются ваши замечания и ответы по ним.' : 'Здесь собраны комментарии по выделенным фрагментам договоров.'; return `<div class="workspace-head"><div><h3>${esc(content[0])}</h3><div class="muted">${esc(content[1])}</div></div><span class="badge blue">Личный кабинет</span></div><div class="workspace-grid"><article class="work-card ${taskSection ? 'task-card' : ''}"><h4>${taskSection ? taskTitle : 'Рабочий список'}</h4><p>${taskSection ? taskDescription : (filter ? 'Вкладка подготовлена для работы с данными текущего пользователя.' : 'Раздел ограничен областью видимости текущего пользователя.')}</p>${actions}${link}</article>${taskSection ? '' : '<article class="work-card"><h4>Следующее действие</h4><p>Откройте задачу из реестра, чтобы перейти к проверке обязательств и документу.</p></article>'}</div>`; }
+      function setRegistryVisibility(section) { const isRegistry = section === 'Реестр обязательств'; document.getElementById('pageHeading').hidden = !isRegistry; document.getElementById('workspace').hidden = isRegistry; document.getElementById('filters').hidden = !isRegistry; document.getElementById('registryStatus').hidden = !isRegistry; document.getElementById('registryLegend').hidden = !isRegistry; document.getElementById('registry').hidden = !isRegistry; }
+      function renderSection(section) { setRegistryVisibility(section); workspace.innerHTML = sectionHtml(section); document.querySelectorAll('#roleNav button').forEach((button) => { button.classList.toggle('active', button.dataset.section === section); button.classList.remove('primary'); }); const filter = sectionFilters[section]; const openRegistry = workspace.querySelector('[data-open-registry]'); if (openRegistry) openRegistry.addEventListener('click', () => { const registryButton = document.querySelector('#roleNav button[data-section="Реестр обязательств"]'); if (registryButton) registryButton.click(); applySectionFilter(filter); document.getElementById('filters').scrollIntoView({ behavior:'smooth', block:'start' }); }); if (section === 'Подтверждения') bindExecutionForm(); if (section === 'Загрузка документов') bindUploadForm(); if (section === 'Задачи по комментариям') bindReviewTasks(false, 'comment_response'); if (section === 'Комментарии куратору') bindReviewTasks(true, 'comment_response'); if (roleSelect.value === 'deal_curator' && section === 'Реестр задач') bindReviewTasks(false, 'comment_response'); if (roleSelect.value === 'lawyer' && section === 'Реестр задач') bindTaskRegistry(); }
+      async function bindExecutionForm() { const select = document.getElementById('executionObligation'); const response = await fetch('/api/obligations?page_size=100&sort=due_date&direction=asc', { headers: {'X-Dev-User-Id': userInput.value.trim()} }); if (!response.ok) { select.innerHTML = '<option value="">Не удалось загрузить обязательства</option>'; return; } const data = await response.json(); select.innerHTML = data.items.length ? '<option value="">Выберите обязательство</option>' + data.items.map((item) => `<option value="${esc(item.obligation_id)}">${esc(item.contract_number)} · ${esc(item.obligation_subject)}</option>`).join('') : '<option value="">Доступных обязательств нет</option>'; document.getElementById('executionForm').addEventListener('submit', submitExecution); }
+      async function submitExecution(event) { event.preventDefault(); const status = document.getElementById('executionStatus').value; const payload = { status, comment: document.getElementById('executionComment').value, actualExecutionDate: document.getElementById('actualExecutionDate').value || null, overdueReason: document.getElementById('overdueReason').value || null, overdueComment: document.getElementById('overdueComment').value || null, evidenceDocumentId: document.getElementById('evidenceDocumentId').value || null }; const obligationId = document.getElementById('executionObligation').value; const message = document.getElementById('executionMessage'); if (!obligationId) { message.textContent = 'Выберите обязательство.'; return; } const response = await fetch(`/api/obligations/${obligationId}/execution`, { method:'PATCH', headers:{'content-type':'application/json','X-Dev-User-Id':userInput.value.trim()}, body:JSON.stringify(payload) }); const data = await response.json(); message.textContent = response.ok ? 'Исполнение сохранено.' : (data.error || 'Не удалось сохранить исполнение.'); if (response.ok) { loadDashboard(); loadRegistry(); } }
+      async function bindUploadForm() { document.getElementById('uploadForm').addEventListener('submit', submitUpload); }
+      async function submitUpload(event) { event.preventDefault(); const file = document.getElementById('uploadFile').files[0]; const message = document.getElementById('uploadMessage'); if (!file) { message.textContent = 'Выберите файл.'; return; } const form = new FormData(); form.append('contractNumber', document.getElementById('uploadContractNumber').value); form.append('title', document.getElementById('uploadTitle').value); form.append('counterpartyName', document.getElementById('uploadCounterparty').value); form.append('contractDate', document.getElementById('uploadContractDate').value); form.append('documentKind', document.getElementById('uploadDocumentKind').value); form.append('file', file); const response = await fetch('/api/documents/upload', { method:'POST', headers:{'X-Dev-User-Id':userInput.value.trim()}, body:form }); const data = await response.json(); message.textContent = response.ok ? `Документ загружен. Статус: ${label(data.processingStatus)}.` : (data.error || 'Не удалось загрузить документ.'); if (response.ok) { document.getElementById('uploadForm').reset(); loadDashboard(); loadRegistry(); } }
+      async function bindTaskRegistry() { const status = document.getElementById('taskGroupStatus'); const due = document.getElementById('taskGroupDue'); const refresh = document.getElementById('refreshTaskGroups'); status.addEventListener('change', () => loadTaskGroups(status.value, due.value)); due.addEventListener('change', () => loadTaskGroups(status.value, due.value)); refresh.addEventListener('click', () => loadTaskGroups(status.value, due.value)); await loadTaskGroups(status.value, due.value); }
+      async function loadTaskGroups(status = 'open', dueScope = '') { const list = document.getElementById('taskGroupsList'); if (!list) return; const params = new URLSearchParams(); if (status) params.set('status', status); if (dueScope) params.set('due_scope', dueScope); const response = await fetch(`/api/review-task-groups?${params.toString()}`, { headers:{'X-Dev-User-Id':userInput.value.trim()} }); const data = await response.json(); if (!response.ok) { list.innerHTML = `<div class="task-empty">${esc(data.error || 'Не удалось загрузить задачи.')}</div>`; return; } list.innerHTML = taskRegistryTableHtml(Array.isArray(data) ? data : []); list.querySelectorAll('[data-task-group]').forEach((button) => button.addEventListener('click', () => loadTaskGroup(button.dataset.taskGroup))); }
+      async function loadTaskGroup(contractId) { const detail = document.getElementById('taskGroupDetail'); if (!detail) return; detail.hidden = false; detail.innerHTML = '<div class="task-empty">Загрузка обязательств…</div>'; const response = await fetch(`/api/review-task-groups/${contractId}`, { headers:{'X-Dev-User-Id':userInput.value.trim()} }); const data = await response.json(); if (!response.ok) { detail.innerHTML = `<div class="task-empty">${esc(data.error || 'Не удалось открыть задачу.')}</div>`; return; } detail.innerHTML = taskGroupDetailHtml(Array.isArray(data) ? data : []); const collapse = document.getElementById('collapseTaskDetail'); if (collapse) collapse.addEventListener('click', () => { detail.hidden = true; }); detail.querySelectorAll('[data-task-contract]').forEach((button) => button.addEventListener('click', () => loadContract(button.dataset.taskContract))); detail.querySelectorAll('[data-verification-status]').forEach((button) => button.addEventListener('click', () => submitVerification(button.dataset.obligationId, button.dataset.verificationStatus, contractId))); detail.scrollIntoView({ behavior:'smooth', block:'start' }); }
+      async function submitVerification(obligationId, status, contractId) { const commentInput = document.getElementById(`verification-comment-${obligationId}`); const comment = commentInput?.value.trim() || ''; if (status === 'corrected' && !comment) { commentInput?.focus(); return; } const response = await fetch(`/api/obligations/${obligationId}/verification`, { method:'PATCH', headers:{'content-type':'application/json','X-Dev-User-Id':userInput.value.trim()}, body:JSON.stringify({ status, comment:comment || null, executionNotRequired:status === 'confirmed' }) }); const data = await response.json(); if (!response.ok) { window.alert(data.error || 'Не удалось сохранить результат проверки.'); return; } await loadTaskGroup(contractId); const statusFilter = document.getElementById('taskGroupStatus')?.value || 'open'; const dueFilter = document.getElementById('taskGroupDue')?.value || ''; await loadTaskGroups(statusFilter, dueFilter); }
+      async function bindReviewTasks(readOnly = false, taskType = 'comment_response', dueFilter = false) { const status = document.getElementById('reviewTaskStatus'); const due = document.getElementById('reviewTaskDue'); const refresh = document.getElementById('refreshReviewTasks'); status.addEventListener('change', () => loadReviewTasks(status.value, taskType, due?.value)); due?.addEventListener('change', () => loadReviewTasks(status.value, taskType, due.value)); refresh.addEventListener('click', () => loadReviewTasks(status.value, taskType, due?.value)); await loadReviewTasks(status.value, taskType, due?.value); }
+      function reviewTaskStatusLabel(value) { return ({open:'Открыта',in_progress:'В работе',completed:'Завершена',declined:'Отклонена'}[value] || value || '—'); }
+      async function loadReviewTasks(status = 'open', taskType = 'comment_response', dueScope = '') { const list = document.getElementById('reviewTasksList'); if (!list) return; const board = document.querySelector('.task-board'); const readOnly = board?.dataset.readonly === 'true'; const expandable = board?.dataset.expandable === 'true'; const params = new URLSearchParams(); if (status) params.set('status', status); if (taskType) params.set('task_type', taskType); if (dueScope) params.set('due_scope', dueScope); const query = params.toString() ? `?${params.toString()}` : ''; const response = await fetch(`/api/review-tasks${query}`, { headers:{'X-Dev-User-Id':userInput.value.trim()} }); const data = await response.json(); if (!response.ok) { list.innerHTML = `<div class="task-empty">${esc(data.error || 'Не удалось загрузить задачи.')}</div>`; return; } if (!data.length) { list.innerHTML = '<div class="task-empty">Задач с выбранными фильтрами нет.</div>'; return; } list.innerHTML = data.map((item) => { const closed = item.status === 'completed' || item.status === 'declined'; const dueDate = item.due_date ? new Date(`${item.due_date}T00:00:00`) : null; const dueLabel = !dueDate ? 'Срок не указан' : dueDate < new Date(new Date().setHours(0,0,0,0)) ? `Просрочено: ${dueDate.toLocaleDateString('ru-RU')}` : dueDate.toDateString() === new Date().toDateString() ? 'Срок: сегодня' : `Срок: ${dueDate.toLocaleDateString('ru-RU')}`; const responseText = item.response_comment ? `<div class="review-task-comment"><strong>Ответ куратора:</strong> ${esc(item.response_comment)}</div>` : ''; const openContract = `<button type="button" class="secondary" data-task-contract="${esc(item.contract_id)}">Открыть договор</button>`; const action = closed ? `${responseText}<div class="review-task-actions">${openContract}</div>` : readOnly ? `<div class="review-task-meta">Назначено: ${esc(item.assignee_name || 'Куратор не назначен')}</div><div class="review-task-actions">${openContract}</div>` : `<textarea class="review-task-response" id="task-response-${esc(item.id)}" placeholder="Опишите решение или уточнение для автора комментария"></textarea><div class="review-task-actions">${openContract}<button type="button" class="secondary" data-task-action="in_progress" data-task-id="${esc(item.id)}">Взять в работу</button><button type="button" data-task-action="completed" data-task-id="${esc(item.id)}">${item.task_type === 'verification' ? 'Завершить проверку' : 'Завершить с ответом'}</button><button type="button" class="secondary" data-task-action="declined" data-task-id="${esc(item.id)}">Отклонить</button></div>`; const head = `<div class="review-task-head"><div><h4 class="review-task-title">${esc(item.title)}</h4><div class="review-task-meta">${esc(item.contract_number)} · ${esc(item.obligation_title || 'Обязательство')}<br>${esc(dueLabel)} · Отправил: ${esc(item.creator_name || 'Пользователь')} · ${new Date(item.created_at).toLocaleString('ru-RU')}</div></div><span class="badge ${closed ? '' : 'blue'}">${esc(reviewTaskStatusLabel(item.status))}</span></div>`; const body = `<div class="review-task-comment">${esc(item.comment_text)}</div>${item.quoted_text ? `<blockquote class="review-task-quote">${esc(item.quoted_text)}</blockquote>` : ''}${action}`; return expandable ? `<details class="review-task expandable is-${esc(item.status)}" data-task-id="${esc(item.id)}"><summary class="review-task-summary">${head}</summary><div class="review-task-body">${body}</div></details>` : `<article class="review-task is-${esc(item.status)}" data-task-id="${esc(item.id)}">${head}${body}</article>`; }).join(''); list.querySelectorAll('[data-task-action]').forEach((button) => button.addEventListener('click', () => submitReviewTask(button.dataset.taskId, button.dataset.taskAction))); list.querySelectorAll('[data-task-contract]').forEach((button) => button.addEventListener('click', () => loadContract(button.dataset.taskContract))); }
+      async function submitReviewTask(taskId, status) { const responseInput = document.getElementById(`task-response-${taskId}`); const responseComment = responseInput?.value.trim() || ''; if ((status === 'completed' || status === 'declined') && !responseComment) { responseInput?.focus(); return; } const response = await fetch(`/api/review-tasks/${taskId}`, { method:'PATCH', headers:{'content-type':'application/json','X-Dev-User-Id':userInput.value.trim()}, body:JSON.stringify({ status, responseComment:responseComment || null }) }); const data = await response.json(); if (!response.ok) { window.alert(data.error || 'Не удалось обновить задачу.'); return; } const statusFilter = document.getElementById('reviewTaskStatus')?.value || 'open'; const taskType = document.querySelector('.task-board')?.dataset.taskType || 'comment_response'; loadReviewTasks(statusFilter, taskType); }
+      function renderMetrics(summary = {}) { const config = roleConfig[roleSelect.value]; document.getElementById('metrics').innerHTML = config.metrics.map(([key, labelText, tone]) => { const context = key === 'totalObligations' ? `<span class="context">в рамках ${Number(summary.contracts || 0).toLocaleString('ru-RU')} ${pluralize(Number(summary.contracts || 0), 'договора', 'договоров', 'договоров')}</span>` : ''; return `<div class="metric ${tone || ''}"><span class="value">${Number(summary[key] || 0).toLocaleString('ru-RU')}</span><span class="label">${esc(labelText)}</span>${context}</div>`; }).join(''); }
+      function renderRole() { const config = roleConfig[roleSelect.value]; document.getElementById('dashboardTitle').textContent = config.title; document.getElementById('dashboardHint').textContent = config.hint; document.getElementById('roleNav').innerHTML = config.nav.map((item) => `<button type="button" data-section="${esc(item)}">${esc(item)}</button>`).join(''); renderMetrics(); document.querySelectorAll('#roleNav button').forEach((button) => button.addEventListener('click', () => renderSection(button.dataset.section))); renderSection(config.nav[0]); }
+      roleSelect.addEventListener('change', renderRole);
+      const userMenuButton = document.getElementById('userMenuButton');
+      const userMenuPanel = document.getElementById('userMenuPanel');
+      userMenuButton.addEventListener('click', (event) => { event.stopPropagation(); const isOpen = !userMenuPanel.hidden; userMenuPanel.hidden = isOpen; userMenuButton.setAttribute('aria-expanded', String(!isOpen)); });
+      document.addEventListener('click', () => { userMenuPanel.hidden = true; userMenuButton.setAttribute('aria-expanded', 'false'); });
+      renderRole();
+      document.getElementById('filters').addEventListener('submit', (event) => { event.preventDefault(); registryPage = 1; loadRegistry(); });
+      document.getElementById('closeDrawer').addEventListener('click', closeDrawer);
+
+      function esc(value) { return String(value ?? '').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
+      function pluralize(value, one, few, many) { const mod10 = value % 10; const mod100 = value % 100; return mod10 === 1 && mod100 !== 11 ? one : mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20) ? few : many; }
+      function label(value) { return ({not_started:'Не начато',in_progress:'В работе',completed:'Исполнено',overdue:'Просрочено',financial:'Финансовое',non_financial:'Нефинансовое'}[value] || value || '—'); }
+      function badge(value, tone='') { return `<span class="badge ${tone}">${esc(label(value))}</span>`; }
+      function setError(message) { const node = document.getElementById('error'); node.textContent = message || ''; node.hidden = !message; }
+      function query() { const params = new URLSearchParams(); for (const id of ['execution_status','obligation_type','overdue','page_size']) { const value = document.getElementById(id).value; if (value) params.set(id, value); } params.set('page', String(registryPage)); params.set('sort','due_date'); params.set('direction','asc'); return params; }
+      function applySectionFilter(filter) { for (const [key, value] of Object.entries(filter)) { const resolved = typeof value === 'function' ? value() : value; const field = document.getElementById(key); if (field) field.value = resolved; } registryPage = 1; loadRegistry(); }
+      async function loadDashboard() { const response = await fetch('/api/dashboard'); if (!response.ok) return; renderMetrics(await response.json()); }
+      async function loadRegistry() {
+        const userId = userInput.value.trim();
+        localStorage.setItem('monitoring-dev-user-id', userId);
+        document.getElementById('identity').textContent = userId ? `Пользователь ${userId.slice(0, 8)}…` : 'Локальный режим';
+        setError('');
+        if (!userId) { document.getElementById('resultInfo').textContent = 'Введите UUID пользователя для просмотра данных'; return; }
+        const response = await fetch(`/api/obligations?${query()}`, { headers: {'X-Dev-User-Id': userId} });
+        const data = await response.json();
+        if (!response.ok) { setError(data.error || 'Не удалось загрузить реестр'); return; }
+        const pageCount = Math.max(1, Math.ceil(Number(data.total || 0) / Number(data.pageSize || 10)));
+        if (registryPage > pageCount) { registryPage = pageCount; await loadRegistry(); return; }
+        const from = data.total ? (data.page - 1) * data.pageSize + 1 : 0;
+        const to = data.total ? Math.min(data.page * data.pageSize, data.total) : 0;
+        document.getElementById('resultInfo').textContent = data.total ? `Показаны ${from}–${to} из ${data.total} обязательств` : 'Обязательства не найдены';
+        document.getElementById('rows').innerHTML = data.items.length ? data.items.map(row).join('') : '<tr><td colspan="8" class="empty"><strong>Обязательства не найдены</strong>Проверьте область видимости или параметры фильтра.</td></tr>';
+        document.querySelectorAll('[data-contract-id]').forEach((link) => link.addEventListener('click', () => loadContract(link.dataset.contractId)));
+        const pagination = document.getElementById('registryPagination');
+        pagination.hidden = pageCount <= 1;
+        document.getElementById('paginationInfo').textContent = `${data.page} / ${pageCount}`;
+        document.getElementById('previousPage').disabled = data.page <= 1;
+        document.getElementById('nextPage').disabled = data.page >= pageCount;
+        document.getElementById('previousPage').onclick = () => { if (registryPage > 1) { registryPage -= 1; loadRegistry(); } };
+        document.getElementById('nextPage').onclick = () => { if (registryPage < pageCount) { registryPage += 1; loadRegistry(); } };
+      }
+      function obligationStateClass(item) { const overdue = item.is_overdue || item.execution_status === 'overdue' || (item.due_date && new Date(`${item.due_date}T00:00:00`) < new Date(new Date().setHours(0,0,0,0)) && !['completed','not_applicable'].includes(item.execution_status)); return overdue ? 'is-overdue' : item.verification_status === 'pending' ? 'is-pending' : item.verification_status === 'corrected' ? 'is-corrected' : item.execution_status === 'completed' ? 'is-completed' : ''; }
+      function row(item) {
+        const overdue = item.is_overdue || item.execution_status === 'overdue';
+        const confidence = item.confidence == null ? '—' : `${Math.round(Number(item.confidence) * 100)}%`;
+        const stateClass = obligationStateClass(item);
+        return `<tr class="obligation-row ${stateClass}"><td><a class="contract-link" data-contract-id="${esc(item.contract_id)}">${esc(item.contract_number)}</a><div class="muted">${esc(item.contract_title)}</div></td><td class="subject">${esc(item.obligation_subject)}</td><td>${esc(item.responsible_party || '—')}</td><td>${esc(item.due_date || '—')}</td><td>${badge(item.obligation_type, 'blue')}</td><td>${badge(item.execution_status, overdue ? 'red' : item.execution_status === 'completed' ? 'green' : '')}</td><td>${esc(item.risk_level || '—')}</td><td>${esc(confidence)}</td></tr>`;
+      }
+      let currentContract = null;
+      let currentDocumentId = null;
+      let currentSelection = null;
+      let currentObligations = [];
+      let currentSelectedObligation = null;
+      let currentDocumentText = '';
+      function canAddRemarks() { return currentRoles.some((role) => ['lawyer','deal_curator','fco','contract_manager','administrator'].includes(role)); }
+      function renderDocumentText() {
+        const textNode = document.getElementById('documentText');
+        const hint = document.getElementById('obligationHighlightHint');
+        if (!currentDocumentText) { textNode.textContent = ''; hint.textContent = ''; return; }
+        const fragment = currentSelectedObligation?.source_fragment?.trim();
+        if (!fragment) { textNode.textContent = currentDocumentText; hint.textContent = ''; return; }
+        const start = currentDocumentText.toLowerCase().indexOf(fragment.toLowerCase());
+        if (start < 0) { textNode.textContent = currentDocumentText; hint.textContent = 'Фрагмент обязательства не найден в открытом документе'; return; }
+        const end = start + fragment.length;
+        textNode.innerHTML = `${esc(currentDocumentText.slice(0, start))}<mark class="obligation-highlight">${esc(currentDocumentText.slice(start, end))}</mark>${esc(currentDocumentText.slice(end))}`;
+        hint.textContent = 'Фрагмент обязательства выделен';
+        textNode.querySelector('.obligation-highlight')?.scrollIntoView({ block:'center' });
+      }
+      function selectObligation(obligationId) { currentSelectedObligation = currentObligations.find((item) => item.obligation_id === obligationId) || null; const targetDocumentId = currentSelectedObligation?.source_document_id; const documentButton = targetDocumentId ? Array.from(document.querySelectorAll('[data-document-id]')).find((button) => button.dataset.documentId === targetDocumentId) : null; if (documentButton && targetDocumentId !== currentDocumentId) documentButton.click(); else renderDocumentText(); loadComments(obligationId); }
+      function updateTextSelection() { const selection = window.getSelection(); const selectedText = selection?.toString().trim() || ''; const textNode = document.getElementById('documentText'); const inside = Boolean(selectedText && selection?.anchorNode && selection?.focusNode && textNode.contains(selection.anchorNode) && textNode.contains(selection.focusNode)); const addButton = document.getElementById('addSelectionComment'); if (!inside) { currentSelection = null; addButton.disabled = true; document.getElementById('selectionHint').textContent = 'Выделите фрагмент текста, чтобы оставить комментарий'; return; } const fullText = textNode.textContent || ''; const startOffset = fullText.indexOf(selectedText); currentSelection = { documentId:currentDocumentId, selectedText, startOffset, endOffset:startOffset >= 0 ? startOffset + selectedText.length : null }; addButton.disabled = false; document.getElementById('selectionHint').textContent = 'Фрагмент выбран — можно добавить комментарий'; }
+      function startSelectionComment() { const message = document.getElementById('remarkMessage'); if (!currentSelection) return; const obligationPicker = document.getElementById('obligationPicker'); if (!obligationPicker.value) { message.textContent = 'Сначала выберите обязательство, к которому относится выделенный фрагмент.'; obligationPicker.focus(); return; } document.getElementById('selectedQuoteText').textContent = currentSelection.selectedText; document.getElementById('selectedQuote').hidden = false; document.getElementById('remarkText').focus(); message.textContent = 'Добавьте пояснение — после сохранения задача уйдёт куратору.'; }
+      function clearSelectionComment() { currentSelection = null; document.getElementById('selectedQuote').hidden = true; document.getElementById('selectedQuoteText').textContent = ''; document.getElementById('addSelectionComment').disabled = true; document.getElementById('selectionHint').textContent = 'Выделите фрагмент текста, чтобы оставить комментарий'; }
+      function renderDocumentWorkspace(data) { currentContract = data; const section = document.getElementById('documentWorkspace'); section.hidden = false; const documents = Array.isArray(data.documents) ? data.documents : []; currentObligations = Array.isArray(data.obligations) ? data.obligations : []; currentSelectedObligation = null; document.getElementById('documentList').innerHTML = documents.length ? documents.map((doc, index) => `<button type="button" data-document-id="${esc(doc.id)}" class="${index === 0 ? 'active' : ''}">${esc(doc.fileName)} · v${esc(doc.documentVersion)}</button>`).join('') : '<span class="muted">Документы не загружены.</span>'; document.getElementById('obligationPicker').innerHTML = currentObligations.length ? '<option value="">Выберите обязательство</option>' + currentObligations.map((item) => `<option value="${esc(item.obligation_id)}">${esc(item.code)} · ${esc(item.obligation_subject)}</option>`).join('') : '<option value="">Обязательства не найдены</option>'; document.querySelectorAll('[data-document-id]').forEach((button) => button.addEventListener('click', () => { document.querySelectorAll('[data-document-id]').forEach((item) => item.classList.remove('active')); button.classList.add('active'); loadDocumentText(button.dataset.documentId, button.textContent || 'Текст документа'); })); document.getElementById('obligationPicker').onchange = (event) => selectObligation(event.target.value); document.getElementById('documentText').onmouseup = updateTextSelection; document.getElementById('documentText').onkeyup = updateTextSelection; document.getElementById('addSelectionComment').onclick = startSelectionComment; document.getElementById('remarkForm').hidden = !canAddRemarks(); document.getElementById('remarkMessage').textContent = canAddRemarks() ? '' : 'Роль наблюдателя доступна только для просмотра.'; document.getElementById('remarkForm').onsubmit = submitRemark; clearSelectionComment(); if (documents[0]) loadDocumentText(documents[0].id, documents[0].fileName); }
+      async function loadDocumentText(id, title) { currentDocumentId = id; clearSelectionComment(); document.getElementById('documentTitle').textContent = title; const response = await fetch(`/api/documents/${id}/text`, { headers: {'X-Dev-User-Id': userInput.value.trim()} }); const data = await response.json(); currentDocumentText = response.ok ? (data.extracted_text || 'Текст ещё не извлечён. Документ находится в очереди обработки.') : (data.error || 'Не удалось открыть документ.'); renderDocumentText(); }
+      async function loadComments(obligationId) { const list = document.getElementById('remarksList'); if (!obligationId) { list.textContent = 'Выберите обязательство.'; return; } const response = await fetch(`/api/obligations/${obligationId}/comments`, { headers: {'X-Dev-User-Id': userInput.value.trim()} }); const data = await response.json(); list.innerHTML = response.ok && data.length ? data.map((item) => `<div class="remark">${esc(item.comment)}${item.source?.selectedText ? `<blockquote class="review-task-quote">${esc(item.source.selectedText)}</blockquote>` : ''}<small>${esc(item.author || 'Пользователь')} · ${esc(new Date(item.created_at).toLocaleString('ru-RU'))}</small></div>`).join('') : '<span class="muted">Замечаний пока нет.</span>'; }
+      async function submitRemark(event) { event.preventDefault(); const obligationId = document.getElementById('obligationPicker').value; const text = document.getElementById('remarkText').value.trim(); const message = document.getElementById('remarkMessage'); if (!obligationId || !text) { message.textContent = 'Выберите обязательство и введите замечание.'; return; } const sourceLocator = currentSelection ? { ...currentSelection } : { documentId:currentDocumentId }; const response = await fetch(`/api/obligations/${obligationId}/comments`, { method:'POST', headers:{'content-type':'application/json','X-Dev-User-Id':userInput.value.trim()}, body:JSON.stringify({ comment:text, sourceLocator }) }); const data = await response.json(); message.textContent = response.ok ? `Замечание направлено куратору. Создана задача №${String(data.taskId || '').slice(0, 8)}.` : (data.error || 'Не удалось сохранить замечание.'); if (response.ok) { document.getElementById('remarkText').value = ''; clearSelectionComment(); loadComments(obligationId); } }
+      async function loadContract(id) {
+        const response = await fetch(`/api/contracts/${id}`, { headers: {'X-Dev-User-Id': userInput.value.trim()} });
+        const data = await response.json();
+        if (!response.ok) { setError(data.error || 'Не удалось открыть договор'); return; }
+        document.getElementById('drawerTitle').textContent = data.contract_number || 'Карточка договора';
+        document.getElementById('drawerSubtitle').textContent = data.title || '';
+        const documents = Array.isArray(data.documents) ? data.documents : [];
+        document.getElementById('drawerBody').innerHTML = [['Статус', label(data.status)], ['Обработка', label(data.processing_status)], ['Проверка', label(data.verification_status)], ['Контрагент', data.counterparty_name], ['Тип', data.contract_type], ['Источник', data.source_system], ['Контур', data.origin_contour], ['Документы', documents.length ? documents.map((doc) => `${esc(doc.fileName)} · v${esc(doc.documentVersion)} · ${esc(label(doc.processingStatus))}`).join('<br>') : 'Документов нет']].map(([term,value]) => `<div class="card-row"><dt>${esc(term)}</dt><dd>${value || '—'}</dd></div>`).join(''); renderDocumentWorkspace(data);
+        document.getElementById('drawer').classList.add('open'); document.getElementById('drawer').setAttribute('aria-hidden','false');
+      }
+      function closeDrawer() { document.getElementById('drawer').classList.remove('open'); document.getElementById('drawer').setAttribute('aria-hidden','true'); }
+      function renderUserMenu(data) { const name = data.full_name || 'Пользователь'; const roles = currentRoles.map((item) => roleLabels[item] || item); const primaryRole = roles[0] || 'Пользователь'; const profile = roleProfiles[roleSelect.value] || {}; const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'П'; document.getElementById('userAvatar').textContent = initials; document.getElementById('userName').textContent = name; document.getElementById('userRole').textContent = primaryRole; document.getElementById('userDetailsName').textContent = `ФИО: ${name}`; document.getElementById('userDetailsPosition').textContent = `Должность: ${profile.position || 'Не указана'}`; document.getElementById('userDetailsDepartment').textContent = `Подразделение: ${profile.department || 'Не указано'}`; document.getElementById('userDetailsEmail').textContent = `Корпоративная почта: ${data.email || 'Не указана'}`; document.getElementById('userDetailsRole').textContent = roles.length ? `Роль в системе: ${roles.join(', ')}` : 'Роль в системе: не определена'; document.getElementById('identity').textContent = name; }
+      async function loadIdentity() { const response = await fetch('/api/me'); if (!response.ok) return; const data = await response.json(); currentRoles = Array.isArray(data.roles) ? data.roles : []; userInput.value = data.id || ''; const role = currentRoles.find((item) => roleConfig[item]); if (role) roleSelect.value = role; renderUserMenu(data); renderRole(); loadDashboard(); loadRegistry(); }
+      loadIdentity();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Вход · Мониторинг обязательств</title>
+    <style>
+      :root { font-family: Inter, Arial, ui-sans-serif, system-ui, -apple-system, sans-serif; color:#222b35; --brand-blue:#0077C8; --brand-deep:#004C97; --brand-gray:#626262; --brand-light:#C8C8C8; }
+      * { box-sizing:border-box; }
+      body { margin:0; min-height:100vh; display:grid; place-items:center; background:linear-gradient(135deg,#eaf4fa 0%,#f5f7f8 52%,#fff 100%); }
+      .shell { position:relative; width:min(470px,calc(100% - 32px)); padding:48px 46px 40px; overflow:hidden; background:#fff; border:1px solid #d9e1e8; border-radius:16px; box-shadow:0 24px 70px rgba(0,76,151,.14); }
+      .shell::before { content:""; position:absolute; inset:0 0 auto; height:5px; background:linear-gradient(90deg,var(--brand-blue),var(--brand-deep)); }
+      .mark { width:46px; height:46px; display:grid; place-items:center; margin-bottom:28px; border-radius:11px; background:linear-gradient(135deg,var(--brand-blue),var(--brand-deep)); color:#fff; font-weight:800; box-shadow:0 7px 16px rgba(0,76,151,.2); }
+      h1 { max-width:360px; margin:0 0 12px; color:var(--brand-deep); font-size:27px; line-height:1.13; letter-spacing:-.04em; }
+      p { max-width:370px; margin:0 0 30px; color:var(--brand-gray); line-height:1.6; font-size:14px; }
+      a { display:flex; justify-content:center; align-items:center; min-height:48px; border-radius:8px; background:var(--brand-blue); color:#fff; text-decoration:none; font-weight:700; box-shadow:0 5px 12px rgba(0,119,200,.16); }
+      a:hover { background:var(--brand-deep); }
+      .foot { margin-top:22px; color:var(--brand-gray); font-size:12px; text-align:center; }
+      @media (max-width:520px) { .shell { width:calc(100% - 24px); padding:40px 24px 30px; } h1 { font-size:24px; } }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <div class="mark">МО</div>
+      <h1>Мониторинг исполнения договорных обязательств</h1>
+      <p>Войдите с единой корпоративной учётной записью, чтобы открыть рабочий кабинет и реестр обязательств.</p>
+      <a href="/auth/provider">Продолжить через корпоративный аккаунт</a>
+      <div class="foot">Корпоративная авторизация · защищённое подключение</div>
+    </main>
+  </body>
+</html>

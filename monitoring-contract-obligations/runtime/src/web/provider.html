@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Корпоративный аккаунт</title>
+    <style>
+      :root { font-family: Inter, Arial, ui-sans-serif, system-ui, -apple-system, sans-serif; color:#222b35; --brand-blue:#0077C8; --brand-deep:#004C97; --brand-gray:#626262; --brand-light:#C8C8C8; }
+      * { box-sizing:border-box; }
+      body { margin:0; min-height:100vh; display:grid; place-items:center; background:linear-gradient(135deg,#eaf4fa 0%,#f5f7f8 52%,#fff 100%); }
+      .shell { position:relative; width:min(470px,calc(100% - 32px)); padding:44px 46px 38px; overflow:hidden; background:#fff; border:1px solid #d9e1e8; border-radius:16px; box-shadow:0 20px 60px rgba(0,76,151,.13); }
+      .shell::before { content:""; position:absolute; inset:0 0 auto; height:5px; background:linear-gradient(90deg,var(--brand-blue),var(--brand-deep)); }
+      .brand { display:flex; align-items:center; gap:10px; margin-bottom:28px; color:var(--brand-deep); font-size:13px; font-weight:700; }
+      .dot { width:12px; height:12px; border-radius:50%; background:var(--brand-blue); }
+      h1 { margin:0 0 9px; color:var(--brand-deep); font-size:26px; letter-spacing:-.04em; }
+      p { margin:0 0 26px; color:var(--brand-gray); font-size:14px; line-height:1.5; }
+      form { display:grid; gap:16px; }
+      label { display:grid; gap:7px; color:#5f6f80; font-size:12px; font-weight:700; }
+      input, select { min-height:45px; border:1px solid #bfcbd5; border-radius:8px; padding:0 12px; font:inherit; color:#222b35; background:#fff; }
+      input:focus, select:focus { outline:3px solid rgba(0,119,200,.16); border-color:var(--brand-blue); }
+      button { min-height:48px; margin-top:4px; border:0; border-radius:8px; background:var(--brand-blue); color:#fff; font:inherit; font-weight:700; cursor:pointer; box-shadow:0 5px 12px rgba(0,119,200,.16); }
+      button:hover { background:var(--brand-deep); }
+      .note { margin-top:22px; padding-top:18px; border-top:1px solid #e5e5e5; color:var(--brand-gray); font-size:12px; line-height:1.5; }
+      .back { display:inline-block; margin-top:18px; color:var(--brand-deep); font-size:13px; text-decoration:none; }
+      @media (max-width:520px) { .shell { width:calc(100% - 24px); padding:38px 24px 30px; } h1 { font-size:24px; } }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <div class="brand"><span class="dot"></span> Корпоративный аккаунт</div>
+      <h1>Вход в систему</h1>
+      <p>Введите данные корпоративной учётной записи.</p>
+      <form method="post" action="/auth/provider">
+        <label>Логин <input name="login" autocomplete="username" required placeholder="name.surname" /></label>
+        <label>Пароль <input name="password" type="password" autocomplete="current-password" required placeholder="Введите пароль" /></label>
+        <label>Роль для локальной демонстрации <select name="role"><option value="lawyer">Юрист</option><option value="deal_curator">Куратор сделки</option><option value="fco">ФЦО</option><option value="contract_manager">Контрактный менеджер</option><option value="observer">Наблюдатель</option><option value="administrator">Администратор</option></select></label>
+        <button type="submit">Войти</button>
+      </form>
+      <div class="note">Это локальный экран-переходник. Пароль не сохраняется. В рабочем контуре форма будет заменена перенаправлением на корпоративный OIDC-провайдер.</div>
+      <a class="back" href="/login">← Вернуться</a>
+    </main>
+  </body>
+</html>

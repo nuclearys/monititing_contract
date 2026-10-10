@@ -1,0 +1,6 @@
+.env
+node_modules/
+dist/
+.idea/
+runtime/storage/*
+!runtime/storage/.gitkeep
