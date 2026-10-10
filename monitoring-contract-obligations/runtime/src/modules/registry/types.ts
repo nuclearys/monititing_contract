@@ -45,6 +45,7 @@ export type ObligationCommentInput = Readonly<{
 export type ReviewTaskUpdateInput = Readonly<{
   status: 'open' | 'in_progress' | 'completed' | 'declined';
   responseComment?: string | null;
+  sendForRecheck?: boolean;
 }>;
 
 export type VerificationUpdateInput = Readonly<{

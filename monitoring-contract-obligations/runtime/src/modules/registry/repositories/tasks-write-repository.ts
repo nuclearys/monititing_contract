@@ -149,6 +149,7 @@ export function createTasksWriteRepository(pool: Pool) {
             task.comment_text,
             task.quoted_text,
             task.source_locator,
+            task.parent_task_id,
             task.task_type,
             task.status,
             task.assignee_user_id,
@@ -199,6 +200,37 @@ export function createTasksWriteRepository(pool: Pool) {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
+        const context = await client.query<{
+          contract_id: string;
+          obligation_id: string | null;
+          task_type: string;
+          created_by_user_id: string | null;
+          assignee_user_id: string | null;
+          title: string;
+          quoted_text: string | null;
+          source_locator: Record<string, unknown> | null;
+        }>(
+          `
+            SELECT contract_id, obligation_id, task_type, created_by_user_id,
+                   assignee_user_id, title, quoted_text, source_locator
+            FROM review_tasks
+            WHERE id = $2
+              AND status IN ('open', 'in_progress')
+              AND (
+                assignee_user_id = $1
+                OR EXISTS (
+                  SELECT 1 FROM user_roles AS admin_role
+                  WHERE admin_role.user_id = $1 AND admin_role.role = 'administrator'
+                )
+              )
+            FOR UPDATE
+          `,
+          [userId, taskId],
+        );
+        if (!context.rows[0]) {
+          await client.query('ROLLBACK');
+          return null;
+        }
         const updated = await client.query(
           `
             UPDATE review_tasks AS task
@@ -214,6 +246,7 @@ export function createTasksWriteRepository(pool: Pool) {
                 END,
                 updated_at = now()
             WHERE task.id = $2
+              AND task.status IN ('open', 'in_progress')
               AND (
                 task.assignee_user_id = $1
                 OR EXISTS (
@@ -229,15 +262,86 @@ export function createTasksWriteRepository(pool: Pool) {
           await client.query('ROLLBACK');
           return null;
         }
+        let followUpTaskId: string | null = null;
+        if (
+          input.status === 'completed'
+          && input.sendForRecheck !== false
+          && context.rows[0].task_type === 'comment_response'
+          && context.rows[0].obligation_id
+        ) {
+          await client.query(
+            `
+              UPDATE obligations
+              SET verification_status = 'pending', status = 'draft', updated_at = now()
+              WHERE id = $1
+            `,
+            [context.rows[0].obligation_id],
+          );
+          const lawyer = await client.query<{ id: string }>(
+            `
+              SELECT u.id
+              FROM users AS u
+              JOIN user_roles AS role ON role.user_id = u.id AND role.role = 'lawyer'
+              WHERE u.is_active = true
+              ORDER BY CASE WHEN u.id = $1 THEN 0 ELSE 1 END, u.created_at
+              LIMIT 1
+            `,
+            [context.rows[0].created_by_user_id],
+          );
+          const event = await client.query<{ id: string }>(
+            `
+              INSERT INTO obligation_verification_events (obligation_id, actor_user_id, action, new_value, comment)
+              VALUES ($1, $2, 'commented', $3::jsonb, $4)
+              RETURNING id
+            `,
+            [
+              context.rows[0].obligation_id,
+              userId,
+              JSON.stringify({ reason: 'curator_response', parentTaskId: taskId }),
+              input.responseComment ?? null,
+            ],
+          );
+          const followUp = await client.query<{ id: string }>(
+            `
+              INSERT INTO review_tasks (
+                contract_id, obligation_id, comment_event_id, parent_task_id,
+                created_by_user_id, assignee_user_id, task_type, title,
+                comment_text, quoted_text, source_locator
+              )
+              VALUES ($1, $2, $3, $4, $5, $6, 'verification', $7, $8, $9, $10::jsonb)
+              RETURNING id
+            `,
+            [
+              context.rows[0].contract_id,
+              context.rows[0].obligation_id,
+              event.rows[0].id,
+              taskId,
+              userId,
+              lawyer.rows[0]?.id ?? context.rows[0].created_by_user_id,
+              `Повторно проверить обязательство «${context.rows[0].title}»`,
+              input.responseComment ?? 'Куратор внёс изменения. Проверьте обязательство повторно.',
+              context.rows[0].quoted_text,
+              JSON.stringify(context.rows[0].source_locator ?? { reason: 'curator_response', parentTaskId: taskId }),
+            ],
+          );
+          followUpTaskId = followUp.rows[0].id;
+          await client.query(
+            `
+              INSERT INTO audit_events (actor_user_id, entity_type, entity_id, action, payload)
+              VALUES ($1, 'review_task', $2, 'review_task_created', $3::jsonb)
+            `,
+            [userId, followUpTaskId, JSON.stringify({ parentTaskId: taskId, taskType: 'verification', obligationId: context.rows[0].obligation_id })],
+          );
+        }
         await client.query(
           `
             INSERT INTO audit_events (actor_user_id, entity_type, entity_id, action, payload)
             VALUES ($1, 'review_task', $2, 'review_task_updated', $3::jsonb)
           `,
-          [userId, taskId, JSON.stringify(input)],
+          [userId, taskId, JSON.stringify({ ...input, followUpTaskId })],
         );
         await client.query('COMMIT');
-        return updated.rows[0];
+        return { ...updated.rows[0], followUpTaskId };
       } catch (error) {
         await client.query('ROLLBACK');
         throw error;

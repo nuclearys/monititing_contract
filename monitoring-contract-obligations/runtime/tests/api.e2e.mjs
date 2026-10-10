@@ -36,6 +36,7 @@ test('document upload, lawyer verification and curator response work end to end'
   let verificationLawyerId = null;
   let commentTaskId = null;
   let commentEventId = null;
+  let followUpTaskId = null;
 
   try {
     const manager = await login(`e2e-manager-${Date.now()}`, 'contract_manager');
@@ -115,8 +116,22 @@ test('document upload, lawyer verification and curator response work end to end'
     });
     assert.equal(completed.response.status, 200);
     assert.equal(completed.body.status, 'completed');
+    assert.ok(completed.body.followUpTaskId, 'curator completion should create a lawyer recheck task');
+    followUpTaskId = completed.body.followUpTaskId;
+
+    const recheckTasks = await jsonResponse('/api/review-tasks?status=open&task_type=verification', { headers: { cookie: lawyer.cookie } });
+    assert.equal(recheckTasks.response.status, 200);
+    assert.ok(recheckTasks.body.some((item) => item.id === completed.body.followUpTaskId));
+    const rechecked = await jsonResponse(`/api/obligations/${verificationObligationId}/verification`, {
+      method: 'PATCH',
+      headers: { cookie: lawyer.cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'confirmed', executionNotRequired: false }),
+    });
+    assert.equal(rechecked.response.status, 200);
+    assert.equal(rechecked.body.status, 'confirmed');
   } finally {
     if (commentTaskId) await pool.query('DELETE FROM review_tasks WHERE id = $1', [commentTaskId]);
+    if (followUpTaskId) await pool.query('DELETE FROM review_tasks WHERE id = $1', [followUpTaskId]);
     if (commentEventId) await pool.query('DELETE FROM obligation_verification_events WHERE id = $1', [commentEventId]);
     if (verificationObligationId) {
       await pool.query(
@@ -124,7 +139,20 @@ test('document upload, lawyer verification and curator response work end to end'
         [verificationObligationId],
       );
       await pool.query(
-        `UPDATE review_tasks SET status = 'open', response_comment = NULL, responded_by_user_id = NULL, responded_at = NULL, updated_at = now() WHERE obligation_id = $1 AND task_type = 'verification'`,
+        `UPDATE review_tasks SET status = 'completed', response_comment = NULL, responded_by_user_id = NULL, responded_at = NULL, updated_at = now() WHERE obligation_id = $1 AND task_type = 'verification'`,
+        [verificationObligationId],
+      );
+      await pool.query(
+        `
+          UPDATE review_tasks
+          SET status = 'open', updated_at = now()
+          WHERE id = (
+            SELECT id FROM review_tasks
+            WHERE obligation_id = $1 AND task_type = 'verification'
+            ORDER BY created_at ASC
+            LIMIT 1
+          )
+        `,
         [verificationObligationId],
       );
       if (verificationLawyerId) {
