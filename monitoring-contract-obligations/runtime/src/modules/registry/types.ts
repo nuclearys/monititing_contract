@@ -37,6 +37,15 @@ export type ManualDocumentInput = Readonly<{
   fileSize: number;
 }>;
 
+export type ContractDocumentVersionInput = Readonly<{
+  documentKind: 'contract' | 'annex' | 'amendment';
+  fileName: string;
+  storageKey: string;
+  mimeType: string;
+  sha256: string;
+  fileSize: number;
+}>;
+
 export type ObligationCommentInput = Readonly<{
   comment: string;
   sourceLocator?: Record<string, unknown> | null;

@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import type { ExtractedObligation } from '../../ai/deepseek.js';
-import type { ManualDocumentInput } from '../types.js';
+import type { ContractDocumentVersionInput, ManualDocumentInput } from '../types.js';
 
 export function createContractWriteRepository(pool: Pool) {
   return {
@@ -45,13 +45,38 @@ export function createContractWriteRepository(pool: Pool) {
           [input.contractNumber, input.title, input.counterpartyName, input.contractDate ?? null],
         );
         const contractId = contract.rows[0].id;
+        const version = await client.query<{ next_version: number; previous_document_id: string | null }>(
+          `
+            SELECT
+              COALESCE(MAX(document_version), 0) + 1 AS next_version,
+              (ARRAY_AGG(id ORDER BY uploaded_at DESC))[1] AS previous_document_id
+            FROM contract_documents
+            WHERE contract_id = $1
+              AND document_kind IN ('contract', 'annex', 'amendment')
+          `,
+          [contractId],
+        );
+        const documentVersion = Number(version.rows[0]?.next_version ?? 1);
+        const previousDocumentId = version.rows[0]?.previous_document_id ?? null;
+        if (input.documentKind !== 'evidence' && input.documentKind !== 'other') {
+          await client.query(
+            `
+              UPDATE contract_documents
+              SET is_current = false
+              WHERE contract_id = $1
+                AND document_kind IN ('contract', 'annex', 'amendment')
+            `,
+            [contractId],
+          );
+        }
         const document = await client.query<{ id: string }>(
           `
             INSERT INTO contract_documents (
               contract_id, file_name, storage_key, document_kind, mime_type,
-              sha256, processing_status, uploaded_by
+              sha256, processing_status, uploaded_by, document_version,
+              is_current, previous_document_id
             )
-            VALUES ($1, $2, $3, $4::document_kind, $5, $6, 'queued', $7)
+            VALUES ($1, $2, $3, $4::document_kind, $5, $6, 'queued', $7, $8, $9, $10)
             RETURNING id
           `,
           [
@@ -62,6 +87,9 @@ export function createContractWriteRepository(pool: Pool) {
             input.mimeType,
             input.sha256,
             userId,
+            documentVersion,
+            true,
+            previousDocumentId,
           ],
         );
         await client.query(
@@ -74,10 +102,116 @@ export function createContractWriteRepository(pool: Pool) {
             fileName: input.fileName,
             fileSize: input.fileSize,
             sourceSystem: 'manual',
+            documentVersion,
+            previousDocumentId,
           })],
         );
         await client.query('COMMIT');
-        return { contractId, documentId: document.rows[0].id, processingStatus: 'queued' };
+        return {
+          contractId,
+          documentId: document.rows[0].id,
+          processingStatus: 'queued',
+          documentVersion,
+          previousDocumentId,
+          isNewVersion: Boolean(previousDocumentId),
+        };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+
+    async uploadContractDocumentVersion(userId: string, contractId: string, input: ContractDocumentVersionInput) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const permission = await client.query(
+          `
+            SELECT 1
+            FROM users AS u
+            WHERE u.id = $1 AND u.is_active = true
+              AND EXISTS (
+                SELECT 1 FROM user_roles
+                WHERE user_id = $1 AND role IN ('lawyer', 'contract_manager', 'administrator')
+              )
+              AND EXISTS (SELECT 1 FROM contracts WHERE id = $2)
+          `,
+          [userId, contractId],
+        );
+        if (!permission.rows[0]) {
+          await client.query('ROLLBACK');
+          return null;
+        }
+        const version = await client.query<{ next_version: number; previous_document_id: string | null }>(
+          `
+            SELECT
+              COALESCE(MAX(document_version), 0) + 1 AS next_version,
+              (ARRAY_AGG(id ORDER BY uploaded_at DESC))[1] AS previous_document_id
+            FROM contract_documents
+            WHERE contract_id = $1
+              AND document_kind IN ('contract', 'annex', 'amendment')
+          `,
+          [contractId],
+        );
+        const documentVersion = Number(version.rows[0]?.next_version ?? 1);
+        const previousDocumentId = version.rows[0]?.previous_document_id ?? null;
+        await client.query(
+          `
+            UPDATE contract_documents
+            SET is_current = false
+            WHERE contract_id = $1
+              AND document_kind IN ('contract', 'annex', 'amendment')
+          `,
+          [contractId],
+        );
+        const document = await client.query<{ id: string }>(
+          `
+            INSERT INTO contract_documents (
+              contract_id, file_name, storage_key, document_kind, mime_type,
+              sha256, processing_status, uploaded_by, document_version,
+              is_current, previous_document_id
+            )
+            VALUES ($1, $2, $3, $4::document_kind, $5, $6, 'queued', $7, $8, true, $9)
+            RETURNING id
+          `,
+          [
+            contractId,
+            input.fileName,
+            input.storageKey,
+            input.documentKind,
+            input.mimeType,
+            input.sha256,
+            userId,
+            documentVersion,
+            previousDocumentId,
+          ],
+        );
+        await client.query(
+          `
+            UPDATE contracts
+            SET processing_status = 'queued', verification_status = 'in_progress', updated_at = now()
+            WHERE id = $1
+          `,
+          [contractId],
+        );
+        await client.query(
+          `
+            INSERT INTO audit_events (actor_user_id, entity_type, entity_id, action, payload)
+            VALUES ($1, 'contract_document', $2, 'contract_document_version_uploaded', $3::jsonb)
+          `,
+          [userId, document.rows[0].id, JSON.stringify({ contractId, fileName: input.fileName, fileSize: input.fileSize, documentVersion, previousDocumentId })],
+        );
+        await client.query('COMMIT');
+        return {
+          contractId,
+          documentId: document.rows[0].id,
+          processingStatus: 'queued',
+          documentVersion,
+          previousDocumentId,
+          isNewVersion: Boolean(previousDocumentId),
+        };
       } catch (error) {
         await client.query('ROLLBACK');
         throw error;
@@ -96,7 +230,9 @@ export function createContractWriteRepository(pool: Pool) {
             d.mime_type,
             d.uploaded_by,
             c.id AS contract_id,
-            c.contract_number
+            c.contract_number,
+            d.document_version,
+            d.previous_document_id
           FROM contract_documents AS d
           JOIN contracts AS c ON c.id = d.contract_id
           WHERE d.id = $1
@@ -125,54 +261,153 @@ export function createContractWriteRepository(pool: Pool) {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const document = await client.query<{ contract_id: string; uploaded_by: string | null }>(
-          `SELECT contract_id, uploaded_by FROM contract_documents WHERE id = $1 FOR UPDATE`,
+        const document = await client.query<{
+          contract_id: string;
+          uploaded_by: string | null;
+          document_version: number;
+          previous_document_id: string | null;
+        }>(
+          `
+            SELECT contract_id, uploaded_by, document_version, previous_document_id
+            FROM contract_documents
+            WHERE id = $1
+            FOR UPDATE
+          `,
           [documentId],
         );
         if (!document.rows[0]) throw new Error('Document not found during extraction.');
-        const { contract_id: contractId, uploaded_by: uploadedBy } = document.rows[0];
-        const extractedObligationIds: string[] = [];
-
-        await client.query(
-          `DELETE FROM obligations WHERE source_document_id = $1 AND verification_status = 'pending'`,
-          [documentId],
+        const { contract_id: contractId, uploaded_by: uploadedBy, document_version: documentVersion, previous_document_id: previousDocumentId } = document.rows[0];
+        const existing = await client.query<{
+          id: string;
+          code: string;
+          title: string;
+          description: string | null;
+          responsible_party: string | null;
+          due_date: string | null;
+          amount: string | null;
+          currency: string | null;
+          obligation_type: string;
+          sanction: string | null;
+          risk_level: string | null;
+          source_fragment: string | null;
+          verification_status: string;
+          version: number;
+        }>(
+          `
+            SELECT id, code, title, description, responsible_party, due_date,
+                   amount, currency, obligation_type, sanction, risk_level,
+                   source_fragment, verification_status, version
+            FROM obligations
+            WHERE contract_id = $1
+            ORDER BY code
+            FOR UPDATE
+          `,
+          [contractId],
         );
+        const existingByCode = new Map(existing.rows.map((row) => [row.code, row]));
+        const extractedCodes = new Set<string>();
+        const reviewItems: Array<{ obligationId: string; title: string; sourceFragment: string | null; changeType: 'new' | 'changed' | 'removed' }> = [];
+        const valueKey = (value: unknown) => value === null || value === undefined ? null : String(value);
+
         for (const [index, item] of obligations.entries()) {
           const code = `AI-${String(index + 1).padStart(3, '0')}`;
-          const savedObligation = await client.query<{ id: string }>(
+          extractedCodes.add(code);
+          const previous = existingByCode.get(code);
+          const sourceLocator = JSON.stringify({ documentId, documentVersion, extractionModel: model });
+          if (!previous) {
+            const inserted = await client.query<{ id: string }>(
+              `
+                INSERT INTO obligations (
+                  contract_id, source_document_id, code, title, description,
+                  responsible_party, due_date, amount, currency, obligation_type,
+                  sanction, risk_level, status, verification_status, execution_status,
+                  confidence, source_fragment, source_text, source_locator, created_by
+                )
+                VALUES (
+                  $1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10::obligation_type,
+                  $11, $12, 'draft', 'pending', 'not_started', $13, $14, $15, $16::jsonb, $17
+                )
+                RETURNING id
+              `,
+              [
+                contractId,
+                documentId,
+                code,
+                item.title,
+                item.description ?? null,
+                item.responsibleParty ?? null,
+                item.dueDate ?? null,
+                item.amount ?? null,
+                item.currency ?? null,
+                item.obligationType,
+                item.sanction ?? null,
+                item.riskLevel ?? null,
+                item.confidence ?? null,
+                item.sourceFragment ?? null,
+                item.sourceFragment ?? null,
+                sourceLocator,
+                uploadedBy,
+              ],
+            );
+            reviewItems.push({ obligationId: inserted.rows[0].id, title: item.title, sourceFragment: item.sourceFragment ?? null, changeType: 'new' });
+            continue;
+          }
+
+          const nextValues = {
+            title: item.title,
+            description: item.description ?? null,
+            responsibleParty: item.responsibleParty ?? null,
+            dueDate: item.dueDate ?? null,
+            amount: item.amount ?? null,
+            currency: item.currency ?? null,
+            obligationType: item.obligationType,
+            sanction: item.sanction ?? null,
+            riskLevel: item.riskLevel ?? null,
+            sourceFragment: item.sourceFragment ?? null,
+          };
+          const previousValues = {
+            title: previous.title,
+            description: previous.description,
+            responsibleParty: previous.responsible_party,
+            dueDate: previous.due_date,
+            amount: previous.amount,
+            currency: previous.currency,
+            obligationType: previous.obligation_type,
+            sanction: previous.sanction,
+            riskLevel: previous.risk_level,
+            sourceFragment: previous.source_fragment,
+          };
+          const changedFields = Object.fromEntries(
+            Object.entries(nextValues).filter(([key, value]) => valueKey(value) !== valueKey(previousValues[key as keyof typeof previousValues])),
+          );
+          const changed = Object.keys(changedFields).length > 0;
+          await client.query(
             `
-              INSERT INTO obligations (
-                contract_id, source_document_id, code, title, description,
-                responsible_party, due_date, amount, currency, obligation_type,
-                status, verification_status, execution_status, confidence,
-                source_fragment, source_text, source_locator, created_by
-              )
-              VALUES (
-                $1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10::obligation_type,
-                'draft', 'pending', 'not_started', $11, $12, $13, $14::jsonb, $15
-              )
-              ON CONFLICT (contract_id, code)
-              DO UPDATE SET
-                source_document_id = EXCLUDED.source_document_id,
-                title = EXCLUDED.title,
-                description = EXCLUDED.description,
-                responsible_party = EXCLUDED.responsible_party,
-                due_date = EXCLUDED.due_date,
-                amount = EXCLUDED.amount,
-                currency = EXCLUDED.currency,
-                obligation_type = EXCLUDED.obligation_type,
-                verification_status = 'pending',
-                confidence = EXCLUDED.confidence,
-                source_fragment = EXCLUDED.source_fragment,
-                source_text = EXCLUDED.source_text,
-                source_locator = EXCLUDED.source_locator,
-                updated_at = now()
-              RETURNING id
+              UPDATE obligations
+              SET source_document_id = $2,
+                  title = $3,
+                  description = $4,
+                  responsible_party = $5,
+                  due_date = $6::date,
+                  amount = $7,
+                  currency = $8,
+                  obligation_type = $9::obligation_type,
+                  sanction = $10,
+                  risk_level = $11,
+                  confidence = $12,
+                  source_fragment = $13,
+                  source_text = $13,
+                  source_locator = $14::jsonb,
+                  verification_status = CASE WHEN $15::boolean THEN 'pending'::verification_status ELSE verification_status END,
+                  status = CASE WHEN $15::boolean THEN 'draft'::obligation_status ELSE status END,
+                  change_basis = CASE WHEN $15::boolean THEN $16 ELSE change_basis END,
+                  version = CASE WHEN $15::boolean THEN version + 1 ELSE version END,
+                  updated_at = now()
+              WHERE id = $1
             `,
             [
-              contractId,
+              previous.id,
               documentId,
-              code,
               item.title,
               item.description ?? null,
               item.responsibleParty ?? null,
@@ -180,16 +415,55 @@ export function createContractWriteRepository(pool: Pool) {
               item.amount ?? null,
               item.currency ?? null,
               item.obligationType,
+              item.sanction ?? null,
+              item.riskLevel ?? null,
               item.confidence ?? null,
               item.sourceFragment ?? null,
-              item.sourceFragment ?? null,
-              JSON.stringify({ documentId, extractionModel: model }),
-              uploadedBy,
+              sourceLocator,
+              changed,
+              `Изменено при обработке версии договора v${documentVersion}`,
             ],
           );
-          extractedObligationIds.push(savedObligation.rows[0].id);
+          if (changed) {
+            await client.query(
+              `
+                INSERT INTO obligation_verification_events (
+                  obligation_id, actor_user_id, action, previous_value, new_value, comment
+                )
+                VALUES ($1, $2, 'corrected', $3::jsonb, $4::jsonb, $5)
+              `,
+              [
+                previous.id,
+                uploadedBy,
+                JSON.stringify({ version: previous.version, documentVersion, values: previousValues }),
+                JSON.stringify({ version: previous.version + 1, documentVersion, changedFields }),
+                `Источник обновлён: версия договора v${documentVersion}. Требуется повторная проверка юристом.`,
+              ],
+            );
+            reviewItems.push({ obligationId: previous.id, title: item.title, sourceFragment: item.sourceFragment ?? null, changeType: 'changed' });
+          }
         }
-        if (extractedObligationIds.length) {
+
+        for (const previous of existing.rows.filter((row) => !extractedCodes.has(row.code))) {
+          await client.query(
+            `
+              INSERT INTO obligation_verification_events (
+                obligation_id, actor_user_id, action, previous_value, new_value, comment
+              )
+              VALUES ($1, $2, 'corrected', $3::jsonb, $4::jsonb, $5)
+            `,
+            [
+              previous.id,
+              uploadedBy,
+              JSON.stringify({ version: previous.version, documentVersion, values: { title: previous.title, sourceFragment: previous.source_fragment } }),
+              JSON.stringify({ documentVersion, changeType: 'not_found_in_new_version' }),
+              `Обязательство не найдено при обработке версии договора v${documentVersion}. Требуется проверка юристом.`,
+            ],
+          );
+          reviewItems.push({ obligationId: previous.id, title: previous.title, sourceFragment: previous.source_fragment, changeType: 'removed' });
+        }
+
+        if (reviewItems.length) {
           const lawyer = await client.query<{ id: string }>(
             `
               SELECT u.id
@@ -201,8 +475,34 @@ export function createContractWriteRepository(pool: Pool) {
             `,
           );
           const lawyerUserId = lawyer.rows[0]?.id ?? null;
-          for (const [index, obligationId] of extractedObligationIds.entries()) {
-            const item = obligations[index];
+          for (const item of reviewItems) {
+            const changeLabel = item.changeType === 'new' ? 'Новое обязательство' : item.changeType === 'removed' ? 'Проверить исключение обязательства' : 'Изменение обязательства';
+            const activeTask = await client.query<{ id: string }>(
+              `
+                UPDATE review_tasks
+                SET title = $2,
+                    comment_text = $3,
+                    quoted_text = $4,
+                    source_locator = $5::jsonb,
+                    status = 'open',
+                    response_comment = NULL,
+                    responded_by_user_id = NULL,
+                    responded_at = NULL,
+                    updated_at = now()
+                WHERE obligation_id = $1
+                  AND task_type = 'verification'
+                  AND status IN ('open', 'in_progress')
+                RETURNING id
+              `,
+              [
+                item.obligationId,
+                `${changeLabel}: «${item.title}»`,
+                `Автоматическая задача после загрузки версии договора v${documentVersion}. Требуется проверить изменение обязательства и зафиксировать результат.`,
+                item.sourceFragment,
+                JSON.stringify({ documentId, documentVersion, previousDocumentId, changeType: item.changeType, extractionModel: model }),
+              ],
+            );
+            if (activeTask.rows[0]) continue;
             await client.query(
               `
                 INSERT INTO review_tasks (
@@ -214,13 +514,13 @@ export function createContractWriteRepository(pool: Pool) {
               `,
               [
                 contractId,
-                obligationId,
+                item.obligationId,
                 uploadedBy,
                 lawyerUserId,
-                `Проверить извлечённое обязательство «${item.title}»`,
-                'Автоматическая задача: проверить обязательство, извлечённое из текста договора.',
-                item.sourceFragment ?? null,
-                JSON.stringify({ documentId, extractionModel: model }),
+                `${changeLabel}: «${item.title}»`,
+                `Автоматическая задача после загрузки версии договора v${documentVersion}. Требуется проверить изменение обязательства и зафиксировать результат.`,
+                item.sourceFragment,
+                JSON.stringify({ documentId, documentVersion, previousDocumentId, changeType: item.changeType, extractionModel: model }),
               ],
             );
           }
@@ -248,10 +548,10 @@ export function createContractWriteRepository(pool: Pool) {
             INSERT INTO audit_events (actor_user_id, entity_type, entity_id, action, payload)
             VALUES ($1, 'contract_document', $2, 'ai_extraction_completed', $3::jsonb)
           `,
-          [uploadedBy, documentId, JSON.stringify({ model, obligationsCount: obligations.length })],
+          [uploadedBy, documentId, JSON.stringify({ model, obligationsCount: obligations.length, documentVersion, previousDocumentId, changesForReview: reviewItems.length })],
         );
         await client.query('COMMIT');
-        return { contractId, obligationsCount: obligations.length, model };
+        return { contractId, obligationsCount: obligations.length, model, documentVersion, changesForReview: reviewItems.length };
       } catch (error) {
         await client.query('ROLLBACK');
         throw error;
@@ -280,4 +580,3 @@ export function createContractWriteRepository(pool: Pool) {
     },
   };
 }
-

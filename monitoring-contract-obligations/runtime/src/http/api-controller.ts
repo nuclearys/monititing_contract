@@ -181,6 +181,50 @@ export function createApiController(deps: ApiControllerDependencies) {
         return true;
       }
 
+      const contractVersionUploadMatch = url.pathname.match(/^\/api\/contracts\/([^/]+)\/document-versions$/);
+      if (request.method === 'POST' && contractVersionUploadMatch) {
+        const contentType = request.headers['content-type'] ?? '';
+        const contentLength = Number(request.headers['content-length'] ?? 0);
+        if (!contentType.startsWith('multipart/form-data') || contentLength > 25 * 1024 * 1024) {
+          sendJson(response, 400, { error: 'Нужен multipart-файл размером не более 25 МБ.' });
+          return true;
+        }
+        const parts = parseMultipart(await requestBuffer(request), contentType);
+        const file = parts.find((item) => item.name === 'file' && Buffer.isBuffer(item.value));
+        const fileName = file?.fileName?.trim() ?? '';
+        const fileBuffer = Buffer.isBuffer(file?.value) ? file.value : null;
+        const documentKind = multipartValue(parts, 'documentKind') || 'amendment';
+        const allowedDocumentKinds = new Set(['contract', 'annex', 'amendment']);
+        if (!fileBuffer || !fileName || !allowedDocumentKinds.has(documentKind)) {
+          sendJson(response, 400, { error: 'Выберите файл и тип новой версии договора.' });
+          return true;
+        }
+        const extension = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')).toLowerCase() : '';
+        const storageKey = `${randomUUID()}${extension}`;
+        try {
+          await deps.storage.put(storageKey, fileBuffer, file?.mimeType || 'application/octet-stream');
+          const created = await deps.registry.contracts.uploadContractDocumentVersion(userId, contractVersionUploadMatch[1], {
+            documentKind: documentKind as 'contract' | 'annex' | 'amendment',
+            fileName,
+            storageKey,
+            mimeType: file?.mimeType || 'application/octet-stream',
+            sha256: createHash('sha256').update(fileBuffer).digest('hex'),
+            fileSize: fileBuffer.length,
+          });
+          if (!created) {
+            await deps.storage.remove(storageKey).catch(() => undefined);
+            sendJson(response, 403, { error: 'Загрузка новой версии доступна юристу, контрактному менеджеру или администратору.' });
+            return true;
+          }
+          await enqueueDocumentProcessing(deps.pool, created.documentId);
+          sendJson(response, 201, created);
+        } catch (error) {
+          await deps.storage.remove(storageKey).catch(() => undefined);
+          throw error;
+        }
+        return true;
+      }
+
       const executionMatch = url.pathname.match(/^\/api\/obligations\/([^/]+)\/execution$/);
       if (request.method === 'PATCH' && executionMatch) {
         const body = await jsonBody(request);

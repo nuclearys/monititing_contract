@@ -3,6 +3,7 @@ import type { RegistryRepository } from '../repository-types.js';
 export function createContractsRepository(core: RegistryRepository) {
   return {
     uploadManualDocument: core.uploadManualDocument,
+    uploadContractDocumentVersion: core.uploadContractDocumentVersion,
     processingDocument: core.processingDocument,
     markDocumentProcessing: core.markDocumentProcessing,
     saveDocumentExtraction: core.saveDocumentExtraction,

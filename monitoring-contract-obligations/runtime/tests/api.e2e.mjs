@@ -31,7 +31,7 @@ test('document upload, lawyer verification and curator response work end to end'
   const contractNumber = `E2E-${Date.now()}`;
   let createdContractId = null;
   let createdDocumentId = null;
-  let uploadedStorageKey = null;
+  const uploadedStorageKeys = [];
   let verificationObligationId = null;
   let verificationLawyerId = null;
   let commentTaskId = null;
@@ -69,6 +69,34 @@ test('document upload, lawyer verification and curator response work end to end'
     assert.equal(card.response.status, 200);
     assert.equal(card.body.contract_id, createdContractId);
     assert.ok(Array.isArray(card.body.documents));
+
+    const revisedSource = await readFile(new URL('../../test-data/Договор_для_проверки_извлечения.docx', import.meta.url));
+    const revisedForm = new FormData();
+    revisedForm.append('documentKind', 'amendment');
+    revisedForm.append('file', new Blob([revisedSource]), 'Дополнительное_соглашение_к_E2E.docx');
+    const revised = await jsonResponse(`/api/contracts/${createdContractId}/document-versions`, {
+      method: 'POST',
+      headers: { cookie: manager.cookie },
+      body: revisedForm,
+    });
+    assert.equal(revised.response.status, 201);
+    assert.equal(revised.body.contractId, createdContractId);
+    assert.equal(revised.body.documentVersion, 2);
+    assert.equal(revised.body.isNewVersion, true);
+    createdDocumentId = revised.body.documentId;
+    const versionRows = await pool.query(
+      `SELECT id, document_version, is_current, previous_document_id
+       FROM contract_documents WHERE contract_id = $1 ORDER BY document_version`,
+      [createdContractId],
+    );
+    assert.equal(versionRows.rows.length, 2);
+    assert.deepEqual(versionRows.rows.map((row) => row.document_version), [1, 2]);
+    assert.equal(versionRows.rows[0].is_current, false);
+    assert.equal(versionRows.rows[1].is_current, true);
+    assert.equal(versionRows.rows[1].previous_document_id, versionRows.rows[0].id);
+    const revisedCard = await jsonResponse(`/api/contracts/${createdContractId}`, { headers: { cookie: manager.cookie } });
+    assert.equal(revisedCard.response.status, 200);
+    assert.ok(revisedCard.body.documents.some((document) => document.documentVersion === 2 && document.isCurrent === true));
 
     const curator = await login('demo.curator', 'deal_curator');
     const curatorMe = await jsonResponse('/api/me', { headers: { cookie: curator.cookie } });
@@ -174,11 +202,11 @@ test('document upload, lawyer verification and curator response work end to end'
       }
     }
     if (createdContractId) {
-      const storage = await pool.query('SELECT storage_key FROM contract_documents WHERE id = $1', [createdDocumentId]);
-      uploadedStorageKey = storage.rows[0]?.storage_key ?? null;
+      const storage = await pool.query('SELECT storage_key FROM contract_documents WHERE contract_id = $1', [createdContractId]);
+      uploadedStorageKeys.push(...storage.rows.map((row) => row.storage_key));
       await pool.query('DELETE FROM contracts WHERE id = $1', [createdContractId]);
     }
-    if (uploadedStorageKey) await unlink(join(process.cwd(), 'storage', uploadedStorageKey)).catch(() => undefined);
+    await Promise.all(uploadedStorageKeys.map((storageKey) => unlink(join(process.cwd(), 'storage', storageKey)).catch(() => undefined)));
     await pool.end();
   }
 });
