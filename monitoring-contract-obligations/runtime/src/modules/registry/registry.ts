@@ -40,6 +40,8 @@ const visibilityCondition = `(
   )
 )`;
 
+const reviewTaskVisibilityCondition = visibilityCondition.replaceAll('c.', 'contract.');
+
 type RegistryFilters = Readonly<{
   status?: string;
   executionStatus?: string;
@@ -760,6 +762,13 @@ export function createRegistryRepository(pool: Pool) {
                 SELECT 1 FROM user_roles AS admin_role
                 WHERE admin_role.user_id = $1 AND admin_role.role = 'administrator'
               )
+              OR (
+                EXISTS (
+                  SELECT 1 FROM user_roles AS lawyer_role
+                  WHERE lawyer_role.user_id = $1 AND lawyer_role.role = 'lawyer'
+                )
+                AND ${reviewTaskVisibilityCondition}
+              )
             )
           GROUP BY task.contract_id, contract.contract_number, contract.title
           HAVING ($2::text IS NULL OR (
@@ -834,6 +843,14 @@ export function createRegistryRepository(pool: Pool) {
               OR EXISTS (
                 SELECT 1 FROM user_roles AS admin_role
                 WHERE admin_role.user_id = $1 AND admin_role.role = 'administrator'
+              )
+              OR (
+                task.task_type = 'verification'
+                AND EXISTS (
+                  SELECT 1 FROM user_roles AS lawyer_role
+                  WHERE lawyer_role.user_id = $1 AND lawyer_role.role = 'lawyer'
+                )
+                AND ${reviewTaskVisibilityCondition}
               )
             )
           ORDER BY obligation.due_date NULLS LAST, obligation.code

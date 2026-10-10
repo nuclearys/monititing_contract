@@ -47,6 +47,11 @@ test('local provider creates a session with a dashboard and paginated registry',
   assert.ok(dashboard.body.contracts >= 1);
   assert.ok(dashboard.body.totalObligations >= 1);
 
+  const taskGroups = await jsonResponse('/api/review-task-groups?status=open', { headers });
+  assert.equal(taskGroups.response.status, 200);
+  assert.ok(Array.isArray(taskGroups.body));
+  assert.ok(taskGroups.body.length >= 1);
+
   const registry = await jsonResponse('/api/obligations?page=2&page_size=10', { headers });
   assert.equal(registry.response.status, 200);
   assert.equal(registry.body.page, 2);
