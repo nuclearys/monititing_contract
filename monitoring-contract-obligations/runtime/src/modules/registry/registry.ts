@@ -1,101 +1,7 @@
 import type { Pool } from 'pg';
 import type { ExtractedObligation } from '../ai/deepseek.js';
-
-const visibilityCondition = `(
-  EXISTS (
-    SELECT 1
-    FROM user_roles AS admin_role
-    WHERE admin_role.user_id = $1
-      AND admin_role.role = 'administrator'
-  )
-  OR EXISTS (
-    SELECT 1
-    FROM user_access_scopes AS full_scope
-    WHERE full_scope.user_id = $1
-      AND full_scope.scope_type = 'full_perimeter'
-  )
-  OR (
-    EXISTS (
-      SELECT 1
-      FROM user_roles AS curator_role
-      WHERE curator_role.user_id = $1
-        AND curator_role.role = 'deal_curator'
-    )
-    AND c.curator_user_id = $1
-  )
-  OR EXISTS (
-    SELECT 1
-    FROM user_access_scopes AS scoped_access
-    WHERE scoped_access.user_id = $1
-      AND (
-        (scoped_access.scope_type = 'business_unit'
-          AND c.business_unit_id = scoped_access.organizational_unit_id)
-        OR (scoped_access.scope_type = 'legal_service'
-          AND c.legal_service_id = scoped_access.organizational_unit_id)
-        OR (scoped_access.scope_type = 'fco'
-          AND c.fco_id = scoped_access.organizational_unit_id)
-        OR (scoped_access.scope_type = 'branch'
-          AND c.branch_id = scoped_access.organizational_unit_id)
-      )
-  )
-)`;
-
-const reviewTaskVisibilityCondition = visibilityCondition.replaceAll('c.', 'contract.');
-
-type RegistryFilters = Readonly<{
-  status?: string;
-  executionStatus?: string;
-  verificationStatus?: string;
-  obligationType?: string;
-  riskLevel?: string;
-  responsibleParty?: string;
-  originContour?: string;
-  dueFrom?: string;
-  dueTo?: string;
-  overdue?: boolean;
-  page: number;
-  pageSize: number;
-  sort: 'due_date' | 'updated_at' | 'contract_number' | 'risk_level';
-  direction: 'asc' | 'desc';
-}>;
-
-type ExecutionUpdateInput = Readonly<{
-  status: 'not_started' | 'in_progress' | 'completed' | 'overdue' | 'not_applicable';
-  comment: string;
-  actualExecutionDate?: string | null;
-  overdueReason?: string | null;
-  overdueComment?: string | null;
-  evidenceDocumentId?: string | null;
-}>;
-
-type ManualDocumentInput = Readonly<{
-  contractNumber: string;
-  title: string;
-  counterpartyName: string;
-  contractDate?: string | null;
-  documentKind: 'contract' | 'annex' | 'amendment' | 'evidence' | 'other';
-  fileName: string;
-  storageKey: string;
-  mimeType: string;
-  sha256: string;
-  fileSize: number;
-}>;
-
-type ObligationCommentInput = Readonly<{
-  comment: string;
-  sourceLocator?: Record<string, unknown> | null;
-}>;
-
-type ReviewTaskUpdateInput = Readonly<{
-  status: 'open' | 'in_progress' | 'completed' | 'declined';
-  responseComment?: string | null;
-}>;
-
-type VerificationUpdateInput = Readonly<{
-  status: 'confirmed' | 'corrected';
-  comment?: string | null;
-  executionNotRequired?: boolean;
-}>;
+import { visibilityCondition, reviewTaskVisibilityCondition } from './visibility.js';
+import type { ExecutionUpdateInput, ManualDocumentInput, ObligationCommentInput, RegistryFilters, ReviewTaskUpdateInput, VerificationUpdateInput } from './types.js';
 
 function addFilter(values: unknown[], expression: string, value: unknown): string {
   values.push(value);
@@ -1206,4 +1112,4 @@ export function createRegistryRepository(pool: Pool) {
   };
 }
 
-export type { RegistryFilters };
+export type { RegistryFilters } from './types.js';

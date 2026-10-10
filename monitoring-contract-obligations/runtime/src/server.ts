@@ -1,153 +1,31 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createDatabasePool } from './infrastructure/database.js';
-import { createRegistryRepository, type RegistryFilters } from './modules/registry/registry.js';
-import { createDocumentProcessor } from './modules/processing/document-processor.js';
+import { loadConfig } from './infrastructure/config.js';
+import { createObjectStorage } from './infrastructure/object-storage.js';
+import { createSessionStore } from './infrastructure/session-store.js';
+import { createAuthService } from './modules/auth/auth-service.js';
+import type { RegistryFilters } from './modules/registry/registry.js';
+import { createRegistryDomainModules } from './modules/registry/domain-modules.js';
+import { enqueueDocumentProcessing } from './modules/processing/document-jobs.js';
+import { jsonBody, multipartValue, parseMultipart, redirect, requestBuffer, sendJson } from './http/http-utils.js';
+import { createAuthMiddleware } from './http/auth-middleware.js';
+import { handleAuthRoutes } from './http/auth-routes.js';
 
-const port = Number(process.env.PORT ?? 4174);
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error('Set DATABASE_URL in runtime/.env.');
-
-const pool = createDatabasePool(databaseUrl);
-const registry = createRegistryRepository(pool);
+const config = loadConfig();
+const port = config.port;
+const pool = createDatabasePool(config.databaseUrl);
+const registry = createRegistryDomainModules(pool);
 const indexHtml = fileURLToPath(new URL('./web/index.html', import.meta.url));
 const loginHtml = fileURLToPath(new URL('./web/login.html', import.meta.url));
 const providerHtml = fileURLToPath(new URL('./web/provider.html', import.meta.url));
-const storageDirectory = fileURLToPath(new URL('../storage/', import.meta.url));
-const sessions = new Map<string, { userId: string; createdAt: number }>();
-const documentProcessor = createDocumentProcessor(registry, storageDirectory);
-
-function sendJson(response: ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, {
-    'content-type': 'application/json; charset=utf-8',
-    'cache-control': 'no-store',
-  });
-  response.end(JSON.stringify(body));
-}
-
-function userIdFromRequest(request: IncomingMessage): string | null {
-  const cookie = request.headers.cookie?.match(/(?:^|;\s*)monitoring_session=([^;]+)/)?.[1];
-  if (cookie) return sessions.get(cookie)?.userId ?? null;
-  const devUserId = request.headers['x-dev-user-id'];
-  if (process.env.NODE_ENV !== 'production' && typeof devUserId === 'string') return devUserId;
-  return null;
-}
-
-function redirect(response: ServerResponse, location: string, cookies: string[] = []): void {
-  response.writeHead(302, { location, ...(cookies.length ? { 'set-cookie': cookies } : {}) });
-  response.end();
-}
-
-async function requestBody(request: IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString('utf8');
-}
-
-async function requestBuffer(request: IncomingMessage): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks);
-}
-
-type MultipartPart = Readonly<{ name: string; fileName?: string; mimeType?: string; value: string | Buffer }>;
-
-function parseMultipart(body: Buffer, contentType: string): MultipartPart[] {
-  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
-  if (!boundaryMatch) return [];
-  const boundary = Buffer.from(`--${boundaryMatch[1] ?? boundaryMatch[2]}`);
-  const parts: MultipartPart[] = [];
-  let cursor = body.indexOf(boundary);
-  while (cursor >= 0) {
-    const partStart = cursor + boundary.length;
-    if (body.subarray(partStart, partStart + 2).toString() === '--') break;
-    const contentStart = partStart + 2;
-    const nextBoundary = body.indexOf(boundary, contentStart);
-    if (nextBoundary < 0) break;
-    const part = body.subarray(contentStart, Math.max(contentStart, nextBoundary - 2));
-    const headerEnd = part.indexOf(Buffer.from('\r\n\r\n'));
-    if (headerEnd >= 0) {
-      const headers = part.subarray(0, headerEnd).toString('utf8');
-      const disposition = headers.match(/content-disposition:\s*form-data;\s*name="([^"]+)"(?:;\s*filename="([^"]*)")?/i);
-      if (disposition) {
-        const mime = headers.match(/content-type:\s*([^\r\n]+)/i)?.[1]?.trim();
-        const data = part.subarray(headerEnd + 4);
-        parts.push({
-          name: disposition[1],
-          fileName: disposition[2] || undefined,
-          mimeType: mime,
-          value: disposition[2] ? data : data.toString('utf8'),
-        });
-      }
-    }
-    cursor = nextBoundary;
-  }
-  return parts;
-}
-
-function multipartValue(parts: MultipartPart[], name: string): string {
-  const part = parts.find((item) => item.name === name && typeof item.value === 'string');
-  return typeof part?.value === 'string' ? part.value.trim() : '';
-}
-
-async function jsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
-  const raw = await requestBody(request);
-  try {
-    const value: unknown = JSON.parse(raw);
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? value as Record<string, unknown>
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-async function createLocalUser(login: string, role: string): Promise<string> {
-  const allowedRoles = new Set(['lawyer', 'deal_curator', 'fco', 'contract_manager', 'observer', 'administrator']);
-  const safeRole = allowedRoles.has(role) ? role : 'lawyer';
-  const normalizedLogin = login.trim().toLowerCase();
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const user = await client.query<{ id: string }>(
-      `
-        INSERT INTO users (external_subject, full_name, email)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (external_subject)
-        DO UPDATE SET full_name = EXCLUDED.full_name, email = EXCLUDED.email, is_active = true
-        RETURNING id
-      `,
-      [`dev:${normalizedLogin}`, normalizedLogin, `${normalizedLogin}@example.local`],
-    );
-    const userId = user.rows[0].id;
-    await client.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
-    await client.query(
-      `INSERT INTO user_roles (user_id, role) VALUES ($1, $2::user_role)
-       ON CONFLICT (user_id, role) DO NOTHING`,
-      [userId, safeRole],
-    );
-    await client.query(
-      `
-        INSERT INTO user_access_scopes (user_id, scope_type)
-        SELECT $1, 'full_perimeter'::access_scope_type
-        WHERE NOT EXISTS (
-          SELECT 1 FROM user_access_scopes
-          WHERE user_id = $1 AND scope_type = 'full_perimeter'
-        )
-      `,
-      [userId],
-    );
-    await client.query('COMMIT');
-    return userId;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
-}
+const storage = createObjectStorage(config);
+const sessions = await createSessionStore(config.redisUrl);
+const auth = createAuthService(pool, sessions, config);
+const authMiddleware = createAuthMiddleware(auth);
+const userIdFromRequest = (request: IncomingMessage): Promise<string | null> => authMiddleware.userId(request);
 
 function integerParam(value: string | null, fallback: number, min: number, max: number) {
   const parsed = value ? Number(value) : fallback;
@@ -181,41 +59,17 @@ function filtersFromUrl(url: URL): RegistryFilters {
 async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
 
-  if (request.method === 'GET' && url.pathname === '/login') {
-    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    response.end(await readFile(loginHtml));
-    return;
-  }
-
-  if (request.method === 'GET' && url.pathname === '/auth/provider') {
-    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    response.end(await readFile(providerHtml));
-    return;
-  }
-
-  if (request.method === 'POST' && url.pathname === '/auth/provider') {
-    const form = new URLSearchParams(await requestBody(request));
-    const login = form.get('login')?.trim();
-    if (!login || !form.get('password')) {
-      sendJson(response, 400, { error: 'Login and password are required.' });
-      return;
-    }
-    const userId = await createLocalUser(login, form.get('role') ?? 'lawyer');
-    const sessionId = randomUUID();
-    sessions.set(sessionId, { userId, createdAt: Date.now() });
-    redirect(response, '/', [`monitoring_session=${sessionId}; HttpOnly; SameSite=Lax; Path=/`]);
-    return;
-  }
-
-  if (request.method === 'GET' && url.pathname === '/logout') {
-    const session = request.headers.cookie?.match(/(?:^|;\s*)monitoring_session=([^;]+)/)?.[1];
-    if (session) sessions.delete(session);
-    redirect(response, '/login', ['monitoring_session=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/']);
-    return;
-  }
+  if (await handleAuthRoutes(request, response, url, {
+    authMode: config.authMode,
+    auth,
+    sessions,
+    sessionTtlSeconds: config.sessionTtlSeconds,
+    loginHtml,
+    providerHtml,
+  })) return;
 
   if (request.method === 'GET' && url.pathname === '/') {
-    if (!userIdFromRequest(request)) {
+    if (!(await userIdFromRequest(request))) {
       redirect(response, '/login');
       return;
     }
@@ -235,7 +89,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   }
 
   if (request.method === 'GET' && url.pathname === '/api/me') {
-    const currentUserId = userIdFromRequest(request);
+    const currentUserId = await userIdFromRequest(request);
     if (!currentUserId) {
       sendJson(response, 401, { error: 'User context is required.' });
       return;
@@ -259,7 +113,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     return;
   }
 
-  const userId = userIdFromRequest(request);
+  const userId = await userIdFromRequest(request);
   if (!userId) {
     sendJson(response, 401, { error: 'User context is required.' });
     return;
@@ -267,7 +121,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
   try {
     if (request.method === 'GET' && url.pathname === '/api/obligations') {
-      sendJson(response, 200, await registry.list(userId, filtersFromUrl(url)));
+      sendJson(response, 200, await registry.obligations.list(userId, filtersFromUrl(url)));
       return;
     }
 
@@ -299,11 +153,9 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       }
       const extension = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')).toLowerCase() : '';
       const storageKey = `${randomUUID()}${extension}`;
-      await mkdir(storageDirectory, { recursive: true });
-      const storagePath = `${storageDirectory}/${storageKey}`;
-      await writeFile(storagePath, fileBuffer);
       try {
-        const created = await registry.uploadManualDocument(userId, {
+        await storage.put(storageKey, fileBuffer, file?.mimeType || 'application/octet-stream');
+        const created = await registry.contracts.uploadManualDocument(userId, {
           contractNumber,
           title,
           counterpartyName,
@@ -316,14 +168,14 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
           fileSize: fileBuffer.length,
         });
         if (!created) {
-          await unlink(storagePath).catch(() => undefined);
+          await storage.remove(storageKey).catch(() => undefined);
           sendJson(response, 403, { error: 'Ручная загрузка доступна контрактному менеджеру или администратору.' });
           return;
         }
-        void documentProcessor.process(created.documentId);
+        await enqueueDocumentProcessing(pool, created.documentId);
         sendJson(response, 201, created);
       } catch (error) {
-        await unlink(storagePath).catch(() => undefined);
+        await storage.remove(storageKey).catch(() => undefined);
         throw error;
       }
       return;
@@ -357,7 +209,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         sendJson(response, 400, { error: 'Для статуса «Просрочено» нужны комментарий и причина просрочки.' });
         return;
       }
-      const updated = await registry.updateExecution(userId, executionMatch[1], {
+      const updated = await registry.obligations.updateExecution(userId, executionMatch[1], {
         status: status as 'not_started' | 'in_progress' | 'completed' | 'overdue' | 'not_applicable',
         comment,
         actualExecutionDate,
@@ -375,7 +227,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
     const commentsMatch = url.pathname.match(/^\/api\/obligations\/([^/]+)\/comments$/);
     if (commentsMatch && request.method === 'GET') {
-      sendJson(response, 200, await registry.obligationComments(userId, commentsMatch[1]));
+      sendJson(response, 200, await registry.comments.list(userId, commentsMatch[1]));
       return;
     }
     if (commentsMatch && request.method === 'POST') {
@@ -388,7 +240,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         sendJson(response, 400, { error: 'Введите замечание.' });
         return;
       }
-      const created = await registry.addObligationComment(userId, commentsMatch[1], { comment, sourceLocator });
+      const created = await registry.comments.add(userId, commentsMatch[1], { comment, sourceLocator });
       if (!created) {
         sendJson(response, 403, { error: 'Обязательство недоступно текущему пользователю.' });
         return;
@@ -411,7 +263,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         sendJson(response, 400, { error: 'Для замечания юриста нужен комментарий.' });
         return;
       }
-      const updated = await registry.updateObligationVerification(userId, verificationMatch[1], {
+      const updated = await registry.obligations.updateVerification(userId, verificationMatch[1], {
         status,
         comment,
         executionNotRequired,
@@ -437,13 +289,13 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         sendJson(response, 400, { error: 'Недопустимый фильтр срока задачи.' });
         return;
       }
-      sendJson(response, 200, await registry.reviewTaskGroups(userId, status, dueScope));
+      sendJson(response, 200, await registry.tasks.groups(userId, status, dueScope));
       return;
     }
 
     const taskGroupMatch = url.pathname.match(/^\/api\/review-task-groups\/([^/]+)$/);
     if (request.method === 'GET' && taskGroupMatch) {
-      sendJson(response, 200, await registry.reviewTaskGroup(userId, taskGroupMatch[1]));
+      sendJson(response, 200, await registry.tasks.group(userId, taskGroupMatch[1]));
       return;
     }
 
@@ -466,7 +318,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         sendJson(response, 400, { error: 'Недопустимый фильтр срока задачи.' });
         return;
       }
-      sendJson(response, 200, await registry.reviewTasks(userId, status, taskType, dueScope));
+      sendJson(response, 200, await registry.tasks.list(userId, status, taskType, dueScope));
       return;
     }
 
@@ -484,7 +336,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         sendJson(response, 400, { error: 'Для завершения или отклонения нужен комментарий куратора.' });
         return;
       }
-      const updated = await registry.updateReviewTask(userId, reviewTaskMatch[1], {
+      const updated = await registry.tasks.update(userId, reviewTaskMatch[1], {
         status: status as 'open' | 'in_progress' | 'completed' | 'declined',
         responseComment: responseComment || null,
       });
@@ -498,7 +350,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
     const contractMatch = url.pathname.match(/^\/api\/contracts\/([^/]+)$/);
     if (request.method === 'GET' && contractMatch) {
-      const card = await registry.contractCard(userId, contractMatch[1]);
+      const card = await registry.contracts.contractCard(userId, contractMatch[1]);
       if (!card) {
         sendJson(response, 404, { error: 'Contract not found.' });
         return;
@@ -509,19 +361,19 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
     const processDocumentMatch = url.pathname.match(/^\/api\/documents\/([^/]+)\/process$/);
     if (request.method === 'POST' && processDocumentMatch) {
-      const visibleDocument = await registry.documentText(userId, processDocumentMatch[1]);
+      const visibleDocument = await registry.contracts.documentText(userId, processDocumentMatch[1]);
       if (!visibleDocument) {
         sendJson(response, 404, { error: 'Document not found.' });
         return;
       }
-      void documentProcessor.process(processDocumentMatch[1]);
+      await enqueueDocumentProcessing(pool, processDocumentMatch[1]);
       sendJson(response, 202, { status: 'processing' });
       return;
     }
 
     const documentMatch = url.pathname.match(/^\/api\/documents\/([^/]+)\/text$/);
     if (request.method === 'GET' && documentMatch) {
-      const document = await registry.documentText(userId, documentMatch[1]);
+      const document = await registry.contracts.documentText(userId, documentMatch[1]);
       if (!document) {
         sendJson(response, 404, { error: 'Document not found.' });
         return;
@@ -547,6 +399,7 @@ server.listen(port, '127.0.0.1', () => {
 
 async function shutdown(): Promise<void> {
   server.close();
+  await sessions.close();
   await pool.end();
 }
 

@@ -154,6 +154,17 @@ try {
 
   console.log('Visibility tables:');
   for (const row of visibility.rows) console.log(`- ${row.table_name}`);
+
+  const jobs = await pool.query<{ table_name: string }>(
+    `
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'document_processing_jobs'
+    `,
+  );
+
+  console.log('Document processing queue:');
+  for (const row of jobs.rows) console.log(`- ${row.table_name}`);
 } finally {
   await pool.end();
 }

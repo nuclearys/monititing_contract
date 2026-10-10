@@ -1,8 +1,8 @@
 import { execFile as execFileCallback } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { createDeepSeekExtractor } from '../ai/deepseek.js';
+import type { ObjectStorage } from '../../infrastructure/object-storage.js';
 
 const execFile = promisify(execFileCallback);
 
@@ -34,21 +34,26 @@ function decodeXmlText(xml: string): string {
     .trim();
 }
 
-async function extractText(storageDirectory: string, storageKey: string, mimeType: string): Promise<string> {
-  const filePath = join(storageDirectory, storageKey);
-  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || storageKey.toLowerCase().endsWith('.docx')) {
-    const result = await execFile('/usr/bin/unzip', ['-p', filePath, 'word/document.xml'], { maxBuffer: 25 * 1024 * 1024 });
-    return decodeXmlText(result.stdout);
+async function extractText(storage: ObjectStorage, storageKey: string, mimeType: string): Promise<string> {
+  const materialized = await storage.materialize(storageKey);
+  const filePath = materialized.filePath;
+  try {
+    if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || storageKey.toLowerCase().endsWith('.docx')) {
+      const result = await execFile('/usr/bin/unzip', ['-p', filePath, 'word/document.xml'], { maxBuffer: 25 * 1024 * 1024 });
+      return decodeXmlText(result.stdout);
+    }
+    if (mimeType === 'application/pdf' || storageKey.toLowerCase().endsWith('.pdf')) {
+      const result = await execFile('/usr/bin/pdftotext', [filePath, '-'], { maxBuffer: 25 * 1024 * 1024 });
+      return result.stdout.trim();
+    }
+    if (mimeType.startsWith('text/')) return (await readFile(filePath, 'utf8')).trim();
+    throw new Error('Поддерживаются DOCX, PDF и текстовые документы.');
+  } finally {
+    await materialized.cleanup();
   }
-  if (mimeType === 'application/pdf' || storageKey.toLowerCase().endsWith('.pdf')) {
-    const result = await execFile('/usr/bin/pdftotext', [filePath, '-'], { maxBuffer: 25 * 1024 * 1024 });
-    return result.stdout.trim();
-  }
-  if (mimeType.startsWith('text/')) return (await readFile(filePath, 'utf8')).trim();
-  throw new Error('Поддерживаются DOCX, PDF и текстовые документы.');
 }
 
-export function createDocumentProcessor(repository: ProcessingRepository, storageDirectory: string) {
+export function createDocumentProcessor(repository: ProcessingRepository, storage: ObjectStorage) {
   const extractor = createDeepSeekExtractor();
 
   return {
@@ -57,7 +62,7 @@ export function createDocumentProcessor(repository: ProcessingRepository, storag
       if (!document) return null;
       await repository.markDocumentProcessing(documentId);
       try {
-        const text = await extractText(storageDirectory, document.storage_key, document.mime_type);
+        const text = await extractText(storage, document.storage_key, document.mime_type);
         const extracted = await extractor.extract(text, {
           contractNumber: document.contract_number,
           fileName: document.file_name,

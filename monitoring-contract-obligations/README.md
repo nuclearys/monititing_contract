@@ -3,6 +3,31 @@
 Проект веб-системы для загрузки договоров, извлечения обязательств и
 контроля их исполнения.
 
+## Архитектура MVP и production-переход
+
+Приложение построено как модульный монолит с отдельным процессом обработки
+документов:
+
+```text
+Browser -> HTTP API/auth middleware -> domain registry -> PostgreSQL
+Document upload -> document_processing_jobs -> document worker -> DeepSeek
+```
+
+Инфраструктурные адаптеры вынесены из бизнес-логики:
+
+- `src/infrastructure/config.ts` — единая конфигурация окружения;
+- `src/infrastructure/session-store.ts` — Redis в production или in-memory в dev;
+- `src/infrastructure/object-storage.ts` — S3/MinIO в production или локальные файлы в dev;
+- `src/modules/auth/auth-service.ts` — локальный вход или OIDC/Keycloak с PKCE,
+  state/nonce и проверкой JWT;
+- `src/modules/processing/document-jobs.ts` и `scripts/document-worker.ts` —
+  очередь и отдельный worker обработки документов;
+- `src/http/http-utils.ts` — общие HTTP, JSON и multipart-утилиты.
+
+Для production задайте `AUTH_MODE=oidc`, `REDIS_URL` и
+`OBJECT_STORAGE_DRIVER=s3` в `runtime/.env`. Локальный режим предназначен
+только для разработки.
+
 ## Шаг 1. Локальная PostgreSQL в Docker
 
 Требования:
@@ -99,6 +124,16 @@ DATABASE_URL='postgresql://monitoring:local-development-only@127.0.0.1:55434/mon
 системное событие и создаёт уведомление куратору. В дальнейшем её можно
 запускать по расписанию из фонового worker-сервиса.
 
+Обработка загруженных документов выполняется отдельным worker-процессом:
+
+```bash
+DATABASE_URL='postgresql://monitoring:local-development-only@127.0.0.1:55434/monitoring_obligations' \
+  npm run worker:documents
+```
+
+HTTP API только сохраняет файл и ставит документ в таблицу
+`document_processing_jobs`; запрос пользователя не ждёт ответа DeepSeek.
+
 После автоматического обнаружения обязательства получают признак
 `overdue_requires_curator_input`. Он снимается после сохранения куратором
 комментария и причины просрочки. Подтверждающий документ для просрочки
@@ -118,8 +153,9 @@ DATABASE_URL='postgresql://monitoring:local-development-only@127.0.0.1:55434/mon
 
 Откройте `http://127.0.0.1:4174/`, чтобы пройти локальный экран авторизации и
 открыть личный кабинет. В dev-режиме форма создаёт локального пользователя и
-сессию; пароль не сохраняется. Для production этот переходник заменяется
-OIDC-потоком через корпоративный провайдер.
+сессию; пароль не сохраняется. В production маршрут `/auth/provider`
+перенаправляет пользователя в Keycloak, а `/auth/callback` проверяет OIDC
+токен и создаёт серверную сессию.
 
 Доступны маршруты:
 
@@ -155,3 +191,15 @@ OIDC-потоком через корпоративный провайдер.
 провайдера находятся в `runtime/.env`; шаблон переменных приведён в
 `runtime/.env.example`. API-ключ не хранится в репозитории, не передаётся в
 браузер и не встраивается в Docker-образ.
+
+Проверки проекта:
+
+```bash
+npm run typecheck
+npm run test:smoke
+npm run test:e2e
+```
+
+Smoke-тесты проверяют здоровье API, авторизацию, дашборд, реестр и парсер
+DeepSeek. Сквозной тест проверяет загрузку договора, постановку в очередь,
+проверку обязательства юристом и ответ куратора.
