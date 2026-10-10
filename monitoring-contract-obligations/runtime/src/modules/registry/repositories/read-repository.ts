@@ -107,6 +107,9 @@ export function createReadRepository(pool: Pool) {
             d.file_name,
             d.document_version,
             d.processing_status,
+            d.ai_processing_status,
+            d.ai_processed_at,
+            d.ai_processing_error,
             d.extracted_text,
             d.processed_at
           FROM contract_documents AS d

@@ -10,7 +10,8 @@
 
 ```text
 Browser -> HTTP API/auth middleware -> domain registry -> PostgreSQL
-Document upload -> document_processing_jobs -> document worker -> DeepSeek
+Document upload -> document_processing_jobs -> text worker -> extracted_text
+                                                       -> document_ai_processing_jobs -> AI worker -> obligations
 ```
 
 Инфраструктурные адаптеры вынесены из бизнес-логики:
@@ -20,8 +21,11 @@ Document upload -> document_processing_jobs -> document worker -> DeepSeek
 - `src/infrastructure/object-storage.ts` — S3/MinIO в production или локальные файлы в dev;
 - `src/modules/auth/auth-service.ts` — локальный вход или OIDC/Keycloak с PKCE,
   state/nonce и проверкой JWT;
-- `src/modules/processing/document-jobs.ts` и `scripts/document-worker.ts` —
-  очередь и отдельный worker обработки документов;
+- `src/modules/processing/document-jobs.ts` — независимые очереди локального
+  извлечения текста и AI-анализа обязательств;
+- `scripts/document-worker.ts` — локальный text worker для DOCX/PDF/текста;
+- `scripts/obligation-analysis-worker.ts` — AI worker, который отправляет в
+  DeepSeek только уже извлечённый текст;
 - `src/modules/registry/repositories/` — отдельные доменные репозитории
   договоров, обязательств, задач, комментариев и дашборда;
 - `src/modules/audit/audit-service.ts` — защищённый журнал действий для
@@ -129,15 +133,25 @@ DATABASE_URL='postgresql://monitoring:local-development-only@127.0.0.1:55434/mon
 системное событие и создаёт уведомление куратору. В дальнейшем её можно
 запускать по расписанию из фонового worker-сервиса.
 
-Обработка загруженных документов выполняется отдельным worker-процессом:
+Обработка загруженных документов разделена на два worker-процесса:
 
 ```bash
 DATABASE_URL='postgresql://monitoring:local-development-only@127.0.0.1:55434/monitoring_obligations' \
   npm run worker:documents
+
+DATABASE_URL='postgresql://monitoring:local-development-only@127.0.0.1:55434/monitoring_obligations' \
+  npm run worker:obligations
 ```
 
-HTTP API только сохраняет файл и ставит документ в таблицу
-`document_processing_jobs`; запрос пользователя не ждёт ответа DeepSeek.
+Первый worker локально извлекает текст и сохраняет его в `extracted_text`.
+После этого создаётся задача в `document_ai_processing_jobs`, которую
+обрабатывает второй worker. HTTP API не ждёт ни распознавания документа, ни
+ответа DeepSeek.
+
+В карточке договора отдельно отображаются статусы текста и AI-анализа.
+Если AI временно недоступен, текст документа остаётся доступен, а анализ можно
+повторно поставить в очередь через `POST /api/documents/:id/analyze` без новой
+загрузки файла.
 
 Для замечаний юриста реализован цикл повторной проверки:
 

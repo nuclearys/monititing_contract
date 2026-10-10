@@ -242,9 +242,91 @@ export function createContractWriteRepository(pool: Pool) {
       return result.rows[0] ?? null;
     },
 
-    async markDocumentProcessing(documentId: string) {
+    async markDocumentTextProcessing(documentId: string) {
       await pool.query(
         `UPDATE contract_documents SET processing_status = 'processing' WHERE id = $1`,
+        [documentId],
+      );
+      await pool.query(
+        `
+          UPDATE contracts
+          SET processing_status = 'processing', updated_at = now()
+          WHERE id = (SELECT contract_id FROM contract_documents WHERE id = $1)
+        `,
+        [documentId],
+      );
+    },
+
+    async saveDocumentText(documentId: string, extractedText: string) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const document = await client.query<{ contract_id: string }>(
+          `SELECT contract_id FROM contract_documents WHERE id = $1 FOR UPDATE`,
+          [documentId],
+        );
+        if (!document.rows[0]) throw new Error('Document not found after text extraction.');
+        const contractId = document.rows[0].contract_id;
+        await client.query(
+          `
+            UPDATE contract_documents
+            SET extracted_text = $2,
+                processing_status = 'ready',
+                processed_at = now(),
+                ai_processing_status = 'queued',
+                ai_processed_at = NULL,
+                ai_processing_error = NULL
+            WHERE id = $1
+          `,
+          [documentId, extractedText],
+        );
+        await client.query(
+          `
+            UPDATE contracts
+            SET processing_status = 'processing', updated_at = now()
+            WHERE id = $1
+          `,
+          [contractId],
+        );
+        await client.query(
+          `
+            INSERT INTO document_ai_processing_jobs (document_id, status, available_at)
+            VALUES ($1, 'queued', now())
+            ON CONFLICT (document_id)
+            DO UPDATE SET status = 'queued', available_at = now(), last_error = NULL, updated_at = now()
+          `,
+          [documentId],
+        );
+        await client.query('COMMIT');
+        return { documentId, contractId, textStatus: 'ready', aiStatus: 'queued' };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+
+    async analysisDocument(documentId: string) {
+      const result = await pool.query(
+        `
+          SELECT d.id, d.file_name, d.extracted_text, c.contract_number
+          FROM contract_documents AS d
+          JOIN contracts AS c ON c.id = d.contract_id
+          WHERE d.id = $1
+        `,
+        [documentId],
+      );
+      return result.rows[0] ?? null;
+    },
+
+    async markDocumentAiProcessing(documentId: string) {
+      await pool.query(
+        `
+          UPDATE contract_documents
+          SET ai_processing_status = 'processing', ai_processing_error = NULL
+          WHERE id = $1
+        `,
         [documentId],
       );
       await pool.query(
@@ -528,10 +610,10 @@ export function createContractWriteRepository(pool: Pool) {
         await client.query(
           `
             UPDATE contract_documents
-            SET extracted_text = $2, processing_status = 'ready', processed_at = now()
+            SET ai_processing_status = 'ready', ai_processed_at = now(), ai_processing_error = NULL
             WHERE id = $1
           `,
-          [documentId, extractedText],
+          [documentId],
         );
         await client.query(
           `
@@ -560,7 +642,7 @@ export function createContractWriteRepository(pool: Pool) {
       }
     },
 
-    async markDocumentProcessingFailed(documentId: string, message: string) {
+    async markDocumentTextProcessingFailed(documentId: string, message: string) {
       await pool.query(`UPDATE contract_documents SET processing_status = 'failed' WHERE id = $1`, [documentId]);
       await pool.query(
         `
@@ -573,7 +655,33 @@ export function createContractWriteRepository(pool: Pool) {
       await pool.query(
         `
           INSERT INTO audit_events (entity_type, entity_id, action, payload)
-          VALUES ('contract_document', $1, 'ai_extraction_failed', $2::jsonb)
+          VALUES ('contract_document', $1, 'document_text_extraction_failed', $2::jsonb)
+          `,
+        [documentId, JSON.stringify({ message: message.slice(0, 1000) })],
+      );
+    },
+
+    async markDocumentAiProcessingFailed(documentId: string, message: string) {
+      await pool.query(
+        `
+          UPDATE contract_documents
+          SET ai_processing_status = 'failed', ai_processing_error = $2
+          WHERE id = $1
+        `,
+        [documentId, message.slice(0, 2_000)],
+      );
+      await pool.query(
+        `
+          UPDATE contracts
+          SET processing_status = 'failed', updated_at = now()
+          WHERE id = (SELECT contract_id FROM contract_documents WHERE id = $1)
+        `,
+        [documentId],
+      );
+      await pool.query(
+        `
+          INSERT INTO audit_events (entity_type, entity_id, action, payload)
+          VALUES ('contract_document', $1, 'ai_obligation_extraction_failed', $2::jsonb)
         `,
         [documentId, JSON.stringify({ message: message.slice(0, 1000) })],
       );

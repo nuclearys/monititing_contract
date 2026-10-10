@@ -30,7 +30,7 @@ async function runOnce(): Promise<boolean> {
   return true;
 }
 
-console.log(`Document worker ${workerId} started.`);
+console.log(`Document text worker ${workerId} started.`);
 while (!stopping) {
   if (!(await runOnce())) await new Promise((resolve) => setTimeout(resolve, 1_000));
 }

@@ -1,7 +1,6 @@
 import { execFile as execFileCallback } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { createDeepSeekExtractor } from '../ai/deepseek.js';
 import type { ObjectStorage } from '../../infrastructure/object-storage.js';
 
 const execFile = promisify(execFileCallback);
@@ -14,9 +13,9 @@ type ProcessingRepository = Readonly<{
     mime_type: string;
     contract_number: string;
   } | null>;
-  markDocumentProcessing(documentId: string): Promise<void>;
-  saveDocumentExtraction(documentId: string, text: string, obligations: Awaited<ReturnType<ReturnType<typeof createDeepSeekExtractor>['extract']>>['obligations'], model: string): Promise<unknown>;
-  markDocumentProcessingFailed(documentId: string, message: string): Promise<void>;
+  markDocumentTextProcessing(documentId: string): Promise<void>;
+  saveDocumentText(documentId: string, text: string): Promise<unknown>;
+  markDocumentTextProcessingFailed(documentId: string, message: string): Promise<void>;
 }>;
 
 function decodeXmlText(xml: string): string {
@@ -54,24 +53,18 @@ async function extractText(storage: ObjectStorage, storageKey: string, mimeType:
 }
 
 export function createDocumentProcessor(repository: ProcessingRepository, storage: ObjectStorage) {
-  const extractor = createDeepSeekExtractor();
-
   return {
     async process(documentId: string) {
       const document = await repository.processingDocument(documentId);
       if (!document) return null;
-      await repository.markDocumentProcessing(documentId);
+      await repository.markDocumentTextProcessing(documentId);
       try {
         const text = await extractText(storage, document.storage_key, document.mime_type);
-        const extracted = await extractor.extract(text, {
-          contractNumber: document.contract_number,
-          fileName: document.file_name,
-        });
-        return await repository.saveDocumentExtraction(documentId, text, extracted.obligations, extractor.model);
+        return await repository.saveDocumentText(documentId, text);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        await repository.markDocumentProcessingFailed(documentId, message);
-        console.error(`Document processing failed for ${documentId}: ${message}`);
+        await repository.markDocumentTextProcessingFailed(documentId, message);
+        console.error(`Document text extraction failed for ${documentId}: ${message}`);
         return null;
       }
     },

@@ -5,7 +5,7 @@ import type { ObjectStorage } from '../infrastructure/object-storage.js';
 import type { RegistryFilters } from '../modules/registry/types.js';
 import { hasAnyRole } from '../modules/auth/access-control.js';
 import type { createRegistryDomainModules } from '../modules/registry/domain-modules.js';
-import { enqueueDocumentProcessing } from '../modules/processing/document-jobs.js';
+import { enqueueDocumentProcessing, enqueueObligationAnalysis } from '../modules/processing/document-jobs.js';
 import { jsonBody, multipartValue, parseMultipart, requestBuffer, sendJson } from './http-utils.js';
 
 type Registry = ReturnType<typeof createRegistryDomainModules>;
@@ -409,6 +409,37 @@ export function createApiController(deps: ApiControllerDependencies) {
         }
         await enqueueDocumentProcessing(deps.pool, processDocumentMatch[1]);
         sendJson(response, 202, { status: 'processing' });
+        return true;
+      }
+      const analyzeDocumentMatch = url.pathname.match(/^\/api\/documents\/([^/]+)\/analyze$/);
+      if (request.method === 'POST' && analyzeDocumentMatch) {
+        const document = await deps.registry.contracts.documentText(userId, analyzeDocumentMatch[1]);
+        if (!document) {
+          sendJson(response, 404, { error: 'Document not found.' });
+          return true;
+        }
+        if (!document.extracted_text) {
+          sendJson(response, 409, { error: 'Сначала необходимо извлечь текст документа.' });
+          return true;
+        }
+        await enqueueObligationAnalysis(deps.pool, analyzeDocumentMatch[1]);
+        await deps.pool.query(
+          `
+            UPDATE contract_documents
+            SET ai_processing_status = 'queued', ai_processing_error = NULL
+            WHERE id = $1
+          `,
+          [analyzeDocumentMatch[1]],
+        );
+        await deps.pool.query(
+          `
+            UPDATE contracts
+            SET processing_status = 'processing', updated_at = now()
+            WHERE id = (SELECT contract_id FROM contract_documents WHERE id = $1)
+          `,
+          [analyzeDocumentMatch[1]],
+        );
+        sendJson(response, 202, { status: 'queued', stage: 'ai_analysis' });
         return true;
       }
       const documentMatch = url.pathname.match(/^\/api\/documents\/([^/]+)\/text$/);

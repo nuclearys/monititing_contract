@@ -11,6 +11,7 @@
     "db:check": "node --env-file-if-exists=.env --import tsx scripts/check-database.ts",
     "obligations:mark-overdue": "node --env-file-if-exists=.env --import tsx scripts/mark-overdue.ts",
     "worker:documents": "node --env-file-if-exists=.env --import tsx scripts/document-worker.ts",
+    "worker:obligations": "node --env-file-if-exists=.env --import tsx scripts/obligation-analysis-worker.ts",
     "start": "node --env-file-if-exists=.env --import tsx src/server.ts",
     "dev": "node --env-file-if-exists=.env --import tsx src/server.ts",
     "typecheck": "tsc --noEmit",
