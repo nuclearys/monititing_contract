@@ -1,33 +1,23 @@
 import type { Pool } from 'pg';
 import { createRegistryRepository } from './registry.js';
+import { createCommentsRepository } from './repositories/comments-repository.js';
+import { createContractsRepository } from './repositories/contracts-repository.js';
+import { createDashboardRepository } from './repositories/dashboard-repository.js';
+import { createObligationsRepository } from './repositories/obligations-repository.js';
+import { createTasksRepository } from './repositories/tasks-repository.js';
 
 export function createRegistryDomainModules(pool: Pool) {
   const core = createRegistryRepository(pool);
+  const dashboard = createDashboardRepository(core);
+  const contracts = createContractsRepository(core);
+  const obligations = createObligationsRepository(core);
+  const comments = createCommentsRepository(core);
+  const tasks = createTasksRepository(core);
   return {
-    dashboard: core.dashboard,
-    contracts: {
-      uploadManualDocument: core.uploadManualDocument,
-      processingDocument: core.processingDocument,
-      markDocumentProcessing: core.markDocumentProcessing,
-      saveDocumentExtraction: core.saveDocumentExtraction,
-      markDocumentProcessingFailed: core.markDocumentProcessingFailed,
-      contractCard: core.contractCard,
-      documentText: core.documentText,
-    },
-    obligations: {
-      list: core.list,
-      updateExecution: core.updateExecution,
-      updateVerification: core.updateObligationVerification,
-    },
-    comments: {
-      add: core.addObligationComment,
-      list: core.obligationComments,
-    },
-    tasks: {
-      groups: core.reviewTaskGroups,
-      group: core.reviewTaskGroup,
-      list: core.reviewTasks,
-      update: core.updateReviewTask,
-    },
+    dashboard: dashboard.dashboard,
+    contracts,
+    obligations,
+    comments,
+    tasks,
   };
 }

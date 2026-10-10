@@ -22,6 +22,10 @@ Document upload -> document_processing_jobs -> document worker -> DeepSeek
   state/nonce и проверкой JWT;
 - `src/modules/processing/document-jobs.ts` и `scripts/document-worker.ts` —
   очередь и отдельный worker обработки документов;
+- `src/modules/registry/repositories/` — отдельные доменные репозитории
+  договоров, обязательств, задач, комментариев и дашборда;
+- `src/modules/audit/audit-service.ts` — защищённый журнал действий для
+  администратора;
 - `src/http/http-utils.ts` — общие HTTP, JSON и multipart-утилиты.
 
 Для production задайте `AUTH_MODE=oidc`, `REDIS_URL` и
@@ -163,6 +167,8 @@ DATABASE_URL='postgresql://monitoring:local-development-only@127.0.0.1:55434/mon
 - `GET /api/obligations` — реестр с фильтрами, пагинацией и сортировкой;
 - `GET /api/contracts/:id` — карточка договора;
 - `GET /api/documents/:id/text` — извлечённый текст документа.
+- `GET /api/audit-events` — журнал действий с фильтрами и пагинацией;
+  доступен только администратору.
 
 До подключения корпоративной авторизации локальный режим принимает заголовок
 `X-Dev-User-Id`. Он предназначен только для разработки и не используется при

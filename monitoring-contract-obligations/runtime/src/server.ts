@@ -7,7 +7,7 @@ import { loadConfig } from './infrastructure/config.js';
 import { createObjectStorage } from './infrastructure/object-storage.js';
 import { createSessionStore } from './infrastructure/session-store.js';
 import { createAuthService } from './modules/auth/auth-service.js';
-import type { RegistryFilters } from './modules/registry/registry.js';
+import type { RegistryFilters } from './modules/registry/types.js';
 import { createRegistryDomainModules } from './modules/registry/domain-modules.js';
 import { enqueueDocumentProcessing } from './modules/processing/document-jobs.js';
 import { jsonBody, multipartValue, parseMultipart, redirect, requestBuffer, sendJson } from './http/http-utils.js';
