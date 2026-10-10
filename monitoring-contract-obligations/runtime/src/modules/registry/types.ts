@@ -53,3 +53,10 @@ export type VerificationUpdateInput = Readonly<{
   comment?: string | null;
   executionNotRequired?: boolean;
 }>;
+
+export type VerificationHistoryFilters = Readonly<{
+  action?: string;
+  search?: string;
+  page: number;
+  pageSize: number;
+}>;

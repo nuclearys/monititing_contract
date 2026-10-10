@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
 import { visibilityCondition } from '../visibility.js';
 import { filterConditions } from '../query-utils.js';
-import type { RegistryFilters } from '../types.js';
+import type { RegistryFilters, VerificationHistoryFilters } from '../types.js';
 
 export function createReadRepository(pool: Pool) {
   return {
@@ -112,6 +112,81 @@ export function createReadRepository(pool: Pool) {
         [userId, documentId],
       );
       return result.rows[0] ?? null;
+    },
+
+    async verificationHistory(userId: string, filters: VerificationHistoryFilters) {
+      const values: unknown[] = [userId];
+      const conditions = [
+        `EXISTS (
+          SELECT 1 FROM users AS viewer
+          WHERE viewer.id = $1 AND viewer.is_active = true
+        )`,
+        `EXISTS (
+          SELECT 1 FROM user_roles AS reviewer_role
+          WHERE reviewer_role.user_id = $1
+            AND reviewer_role.role IN ('lawyer', 'administrator')
+        )`,
+        visibilityCondition,
+      ];
+      if (filters.action) {
+        values.push(filters.action);
+        conditions.push(`event.action = $${values.length}`);
+      }
+      if (filters.search) {
+        values.push(`%${filters.search}%`);
+        conditions.push(`(
+          c.contract_number ILIKE $${values.length}
+          OR c.title ILIKE $${values.length}
+          OR o.code ILIKE $${values.length}
+          OR o.title ILIKE $${values.length}
+          OR coalesce(event.comment, '') ILIKE $${values.length}
+        )`);
+      }
+      const where = conditions.map((condition) => `(${condition})`).join(' AND ');
+      const offset = (filters.page - 1) * filters.pageSize;
+      const countResult = await pool.query<{ total: number }>(
+        `
+          SELECT count(*)::int AS total
+          FROM obligation_verification_events AS event
+          JOIN obligations AS o ON o.id = event.obligation_id
+          JOIN contracts AS c ON c.id = o.contract_id
+          WHERE ${where}
+        `,
+        values,
+      );
+      const rows = await pool.query(
+        `
+          SELECT
+            event.id,
+            event.obligation_id,
+            event.action,
+            event.previous_value,
+            event.new_value,
+            event.comment,
+            event.created_at,
+            actor.full_name AS actor_name,
+            c.id AS contract_id,
+            c.contract_number,
+            c.title AS contract_title,
+            o.code AS obligation_code,
+            o.title AS obligation_title
+          FROM obligation_verification_events AS event
+          JOIN obligations AS o ON o.id = event.obligation_id
+          JOIN contracts AS c ON c.id = o.contract_id
+          LEFT JOIN users AS actor ON actor.id = event.actor_user_id
+          WHERE ${where}
+          ORDER BY event.created_at DESC
+          LIMIT $${values.length + 1}
+          OFFSET $${values.length + 2}
+        `,
+        [...values, filters.pageSize, offset],
+      );
+      return {
+        items: rows.rows,
+        total: countResult.rows[0]?.total ?? 0,
+        page: filters.page,
+        pageSize: filters.pageSize,
+      };
     },
   };
 }

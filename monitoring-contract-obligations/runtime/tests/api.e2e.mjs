@@ -136,6 +136,10 @@ test('document upload, lawyer verification and curator response work end to end'
     });
     assert.equal(rechecked.response.status, 200);
     assert.equal(rechecked.body.status, 'confirmed');
+
+    const history = await jsonResponse(`/api/verification-history?search=${encodeURIComponent(task.contract_number)}&page_size=20`, { headers: { cookie: lawyer.cookie } });
+    assert.equal(history.response.status, 200);
+    assert.ok(history.body.items.some((item) => item.obligation_id === verificationObligationId));
   } finally {
     if (commentTaskId) await pool.query('DELETE FROM review_tasks WHERE id = $1', [commentTaskId]);
     if (followUpTaskId) await pool.query('DELETE FROM review_tasks WHERE id = $1', [followUpTaskId]);

@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Pool } from 'pg';
 import type { ObjectStorage } from '../infrastructure/object-storage.js';
 import type { RegistryFilters } from '../modules/registry/types.js';
+import { hasAnyRole } from '../modules/auth/access-control.js';
 import type { createRegistryDomainModules } from '../modules/registry/domain-modules.js';
 import { enqueueDocumentProcessing } from '../modules/processing/document-jobs.js';
 import { jsonBody, multipartValue, parseMultipart, requestBuffer, sendJson } from './http-utils.js';
@@ -92,6 +93,24 @@ export function createApiController(deps: ApiControllerDependencies) {
       }
       if (request.method === 'GET' && url.pathname === '/api/dashboard') {
         sendJson(response, 200, await deps.registry.dashboard(userId));
+        return true;
+      }
+      if (request.method === 'GET' && url.pathname === '/api/verification-history') {
+        const action = url.searchParams.get('action');
+        if (!isAllowed(action, ['confirmed', 'corrected', 'rejected', 'commented', 'added'])) {
+          sendJson(response, 400, { error: 'Недопустимый тип события проверки.' });
+          return true;
+        }
+        if (!(await hasAnyRole(deps.pool, userId, ['lawyer', 'administrator']))) {
+          sendJson(response, 403, { error: 'История проверок доступна только юристу или администратору.' });
+          return true;
+        }
+        sendJson(response, 200, await deps.registry.verificationHistory(userId, {
+          action: action ?? undefined,
+          search: url.searchParams.get('search')?.trim() || undefined,
+          page: integerParam(url.searchParams.get('page'), 1, 1, 1_000_000),
+          pageSize: integerParam(url.searchParams.get('page_size'), 20, 1, 100),
+        }));
         return true;
       }
       if (request.method === 'GET' && url.pathname === '/api/audit-events') {

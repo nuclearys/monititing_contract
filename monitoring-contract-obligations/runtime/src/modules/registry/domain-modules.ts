@@ -15,6 +15,7 @@ export function createRegistryDomainModules(pool: Pool) {
   const tasks = createTasksRepository(core);
   return {
     dashboard: dashboard.dashboard,
+    verificationHistory: core.verificationHistory,
     contracts,
     obligations,
     comments,

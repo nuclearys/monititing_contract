@@ -115,6 +115,7 @@ export function createRegistryRepository(pool: Pool) {
     list: readRepository.list,
     contractCard: readRepository.contractCard,
     documentText: readRepository.documentText,
+    verificationHistory: readRepository.verificationHistory,
   };
 }
 
