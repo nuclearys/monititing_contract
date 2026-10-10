@@ -58,4 +58,21 @@ test('local provider creates a session with a dashboard and paginated registry',
   assert.equal(registry.body.pageSize, 10);
   assert.ok(Array.isArray(registry.body.items));
   assert.ok(Number.isInteger(registry.body.total));
+
+  const forbiddenAudit = await jsonResponse('/api/audit-events', { headers });
+  assert.equal(forbiddenAudit.response.status, 403);
+
+  const adminLogin = `smoke-admin-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const adminResponse = await fetch(`${baseUrl}/auth/provider`, {
+    method: 'POST',
+    redirect: 'manual',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ login: adminLogin, password: 'smoke-password', role: 'administrator' }),
+  });
+  assert.equal(adminResponse.status, 302);
+  const adminCookie = adminResponse.headers.get('set-cookie').split(';', 1)[0];
+  const audit = await jsonResponse('/api/audit-events?page=1&page_size=10', { headers: { cookie: adminCookie } });
+  assert.equal(audit.response.status, 200);
+  assert.ok(Array.isArray(audit.body.items));
+  assert.equal(audit.body.pageSize, 10);
 });

@@ -13,6 +13,7 @@ import { enqueueDocumentProcessing } from './modules/processing/document-jobs.js
 import { jsonBody, multipartValue, parseMultipart, redirect, requestBuffer, sendJson } from './http/http-utils.js';
 import { createAuthMiddleware } from './http/auth-middleware.js';
 import { handleAuthRoutes } from './http/auth-routes.js';
+import { createAuditService } from './modules/audit/audit-service.js';
 
 const config = loadConfig();
 const port = config.port;
@@ -24,6 +25,7 @@ const providerHtml = fileURLToPath(new URL('./web/provider.html', import.meta.ur
 const storage = createObjectStorage(config);
 const sessions = await createSessionStore(config.redisUrl);
 const auth = createAuthService(pool, sessions, config);
+const audit = createAuditService(pool);
 const authMiddleware = createAuthMiddleware(auth);
 const userIdFromRequest = (request: IncomingMessage): Promise<string | null> => authMiddleware.userId(request);
 
@@ -127,6 +129,26 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 
     if (request.method === 'GET' && url.pathname === '/api/dashboard') {
       sendJson(response, 200, await registry.dashboard(userId));
+      return;
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/audit-events') {
+      const page = integerParam(url.searchParams.get('page'), 1, 1, 1_000_000);
+      const pageSize = integerParam(url.searchParams.get('page_size'), 25, 1, 100);
+      try {
+        sendJson(response, 200, await audit.list(userId, {
+          entityType: url.searchParams.get('entity_type') ?? undefined,
+          action: url.searchParams.get('action') ?? undefined,
+          page,
+          pageSize,
+        }));
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('Недостаточно прав')) {
+          sendJson(response, 403, { error: error.message });
+          return;
+        }
+        throw error;
+      }
       return;
     }
 

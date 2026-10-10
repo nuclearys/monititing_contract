@@ -22,10 +22,10 @@ async function runOnce(): Promise<boolean> {
   try {
     const processed = await processor.process(job.documentId);
     if (!processed) throw new Error('Document processor returned no result.');
-    await completeDocumentJob(pool, job.id);
+    await completeDocumentJob(pool, job.id, workerId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await failDocumentJob(pool, job.id, message, job.attempts < 3);
+    await failDocumentJob(pool, job.id, workerId, message, job.attempts < 3);
   }
   return true;
 }

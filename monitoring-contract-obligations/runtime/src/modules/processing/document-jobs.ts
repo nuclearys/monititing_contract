@@ -18,6 +18,16 @@ export async function claimDocumentJob(pool: Pool, workerId: string): Promise<Do
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query(
+      `
+        UPDATE document_processing_jobs
+        SET status = 'queued', locked_by = NULL, locked_at = NULL, updated_at = now(),
+            last_error = COALESCE(last_error, 'Задача возвращена в очередь после тайм-аута worker-а.')
+        WHERE status = 'processing'
+          AND locked_at < now() - ($1::int * interval '1 second')
+      `,
+      [10 * 60],
+    );
     const result = await client.query<{ id: string; document_id: string; attempts: number }>(
       `
         SELECT id, document_id, attempts
@@ -48,21 +58,26 @@ export async function claimDocumentJob(pool: Pool, workerId: string): Promise<Do
   }
 }
 
-export async function completeDocumentJob(pool: Pool, jobId: string): Promise<void> {
-  await pool.query(
-    `UPDATE document_processing_jobs SET status = 'completed', updated_at = now() WHERE id = $1`,
-    [jobId],
-  );
-}
-
-export async function failDocumentJob(pool: Pool, jobId: string, message: string, retry: boolean): Promise<void> {
+export async function completeDocumentJob(pool: Pool, jobId: string, workerId: string): Promise<void> {
   await pool.query(
     `
       UPDATE document_processing_jobs
-      SET status = $2, last_error = $3, available_at = now() + CASE WHEN $2 = 'queued' THEN interval '30 seconds' ELSE interval '0 seconds' END,
-          updated_at = now()
-      WHERE id = $1
+      SET status = 'completed', locked_by = NULL, locked_at = NULL, updated_at = now()
+      WHERE id = $1 AND status = 'processing' AND locked_by = $2
     `,
-    [jobId, retry ? 'queued' : 'failed', message.slice(0, 2_000)],
+    [jobId, workerId],
+  );
+}
+
+export async function failDocumentJob(pool: Pool, jobId: string, workerId: string, message: string, retry: boolean): Promise<void> {
+  await pool.query(
+    `
+      UPDATE document_processing_jobs
+      SET status = $3, locked_by = NULL, locked_at = NULL, last_error = $4,
+          available_at = now() + CASE WHEN $3 = 'queued' THEN interval '30 seconds' ELSE interval '0 seconds' END,
+          updated_at = now()
+      WHERE id = $1 AND status = 'processing' AND locked_by = $2
+    `,
+    [jobId, workerId, retry ? 'queued' : 'failed', message.slice(0, 2_000)],
   );
 }
