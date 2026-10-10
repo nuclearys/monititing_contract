@@ -49,9 +49,16 @@ export type ReviewTaskUpdateInput = Readonly<{
 }>;
 
 export type VerificationUpdateInput = Readonly<{
-  status: 'confirmed' | 'corrected';
+  status: 'confirmed' | 'corrected' | 'rejected';
   comment?: string | null;
   executionNotRequired?: boolean;
+  title?: string;
+  description?: string | null;
+  responsibleParty?: string | null;
+  dueDate?: string | null;
+  obligationType?: 'financial' | 'non_financial';
+  sanction?: string | null;
+  riskLevel?: string | null;
 }>;
 
 export type VerificationHistoryFilters = Readonly<{

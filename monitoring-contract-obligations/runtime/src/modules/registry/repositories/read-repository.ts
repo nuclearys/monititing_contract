@@ -74,9 +74,18 @@ export function createReadRepository(pool: Pool) {
             o.id AS obligation_id,
             o.code,
             o.title AS obligation_subject,
+            o.description,
+            o.responsible_party,
             o.verification_status,
             o.execution_status,
             o.due_date,
+            o.obligation_type,
+            o.sanction,
+            o.risk_level,
+            o.user_comment,
+            o.confidence,
+            o.version,
+            o.change_basis,
             o.source_document_id,
             o.source_fragment
           FROM obligations AS o

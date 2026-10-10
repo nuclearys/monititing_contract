@@ -252,21 +252,43 @@ export function createApiController(deps: ApiControllerDependencies) {
         const body = await jsonBody(request);
         const status = body.status;
         const comment = typeof body.comment === 'string' ? body.comment.trim() : null;
-        if (status !== 'confirmed' && status !== 'corrected') {
+        const title = typeof body.title === 'string' ? body.title.trim() : undefined;
+        const description = body.description === null ? null : typeof body.description === 'string' ? body.description.trim() : undefined;
+        const responsibleParty = body.responsibleParty === null ? null : typeof body.responsibleParty === 'string' ? body.responsibleParty.trim() : undefined;
+        const dueDate = body.dueDate === null ? null : typeof body.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.dueDate) ? body.dueDate : undefined;
+        const obligationType = body.obligationType;
+        const sanction = body.sanction === null ? null : typeof body.sanction === 'string' ? body.sanction.trim() : undefined;
+        const riskLevel = body.riskLevel === null ? null : typeof body.riskLevel === 'string' ? body.riskLevel.trim() : undefined;
+        if (status !== 'confirmed' && status !== 'corrected' && status !== 'rejected') {
           sendJson(response, 400, { error: 'Недопустимый результат проверки обязательства.' });
           return true;
         }
-        if (status === 'corrected' && !comment) {
+        if (status !== 'confirmed' && !comment) {
           sendJson(response, 400, { error: 'Для замечания юриста нужен комментарий.' });
+          return true;
+        }
+        if (body.dueDate !== undefined && body.dueDate !== null && dueDate === undefined) {
+          sendJson(response, 400, { error: 'Срок обязательства должен быть указан в формате ГГГГ-ММ-ДД.' });
+          return true;
+        }
+        if (obligationType !== undefined && obligationType !== 'financial' && obligationType !== 'non_financial') {
+          sendJson(response, 400, { error: 'Недопустимый тип обязательства.' });
           return true;
         }
         const updated = await deps.registry.obligations.updateVerification(userId, verificationMatch[1], {
           status,
           comment,
           executionNotRequired: body.executionNotRequired === true,
+          title,
+          description,
+          responsibleParty,
+          dueDate,
+          obligationType,
+          sanction,
+          riskLevel,
         });
         if (!updated) {
-          sendJson(response, 403, { error: 'Обязательство недоступно юристу для проверки.' });
+          sendJson(response, 403, { error: 'Обязательство недоступно для редактирования текущей роли.' });
           return true;
         }
         sendJson(response, 200, updated);
